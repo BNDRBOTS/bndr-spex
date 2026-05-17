@@ -230,6 +230,32 @@ textarea#goal_description {
 .saved-item strong { display: block; color: inherit; margin-bottom: 2px; }
 .saved-item span { display: block; color: var(--text-soft); font-size: .75rem; }
 .refresh-button { color: var(--accent); padding: 0; font-size: .7rem; }
+#plan-status[data-access-state="paid"], #plan-status[data-access-state="trial"], #plan-status[data-access-state="credit"] { color: var(--accent); }
+#plan-status[data-access-state="past_due"] { color: #ffd166; }
+#plan-status[data-access-state="expired"] { color: #ffb8b8; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2,6,23,.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.billing-modal {
+  width: min(460px, 100%);
+  padding: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(15,23,42,.96), rgba(5,8,19,.96));
+  box-shadow: var(--shadow);
+}
+.billing-modal h2 { margin-bottom: 10px; }
+.billing-modal p { margin-bottom: 18px; }
+.modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.modal-actions .pill-primary { grid-column: 1 / -1; }
 .toast {
   position: fixed;
   left: 50%;
@@ -311,7 +337,8 @@ label { display: grid; gap: 7px; color: var(--text-secondary); font-weight: 700;
   .col-right { grid-template-columns: 1fr; gap: 10px; }
   .meta-section { padding: 16px; border-radius: 20px; }
   .output-data { max-height: 60vh; }
-  .output-actions, .access-actions, .grid-two, .feature-grid, .pricing-grid { grid-template-columns: 1fr; }
+  .output-actions, .access-actions, .modal-actions, .grid-two, .feature-grid, .pricing-grid { grid-template-columns: 1fr; }
+  .modal-actions .pill-primary { grid-column: auto; }
   .toast { left: 10px; right: 10px; bottom: 10px; top: auto; transform: translateY(140%); max-width: none; }
   .toast.visible { transform: translateY(0); }
 }

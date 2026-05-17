@@ -32,8 +32,12 @@
       message.textContent = 'Sign-in is not connected yet. Contact support.';
     }
     const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co', env.SUPABASE_ANON_KEY || 'missing');
-    const existing = await supabase.auth.getSession();
-    if (existing.data.session) window.location.href = '/app.html';
+    try {
+      const existing = await supabase.auth.getSession();
+      if (existing.data.session) window.location.href = '/app.html';
+    } catch (_) {
+      message.textContent = 'Sign-in could not check your session. Try again.';
+    }
 
     function values() {
       return {
@@ -42,32 +46,49 @@
       };
     }
     function setMessage(text) { message.textContent = text; }
+    function cleanAuthMessage(error, fallback) {
+      const raw = error && error.message || error || '';
+      const text = String(raw).trim();
+      if (!text) return fallback;
+      if (/invalid login credentials/i.test(text)) return 'Email or password is incorrect.';
+      if (/already registered|already exists/i.test(text)) return 'That email already has an account. Sign in instead.';
+      if (/supabase|provider|api|token|secret|not configured|failed to fetch|network|http\s*\d|invalid json/i.test(text)) return fallback;
+      return text.length > 160 ? fallback : text;
+    }
 
     document.getElementById('auth-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       setMessage('Signing in...');
-      const { email, password } = values();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return setMessage(error.message);
-      window.location.href = '/app.html';
+      try {
+        const { email, password } = values();
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) return setMessage(cleanAuthMessage(error, 'Sign-in could not finish. Please try again.'));
+        window.location.href = '/app.html';
+      } catch (error) {
+        setMessage(cleanAuthMessage(error, 'Sign-in could not finish. Please try again.'));
+      }
     });
 
     document.getElementById('signup').addEventListener('click', async () => {
       setMessage('Creating account...');
-      const { email, password } = values();
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/app.html`
+      try {
+        const { email, password } = values();
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/app.html`
+          }
+        });
+        if (error) return setMessage(cleanAuthMessage(error, 'Account creation could not finish. Please try again.'));
+        if (data && data.session) {
+          window.location.href = '/app.html';
+          return;
         }
-      });
-      if (error) return setMessage(error.message);
-      if (data && data.session) {
-        window.location.href = '/app.html';
-        return;
+        setMessage('Account created. Confirm your email, then sign in.');
+      } catch (error) {
+        setMessage(cleanAuthMessage(error, 'Account creation could not finish. Please try again.'));
       }
-      setMessage('Account created. Confirm your email, then sign in.');
     });
   </script>
 </body>

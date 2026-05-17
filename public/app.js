@@ -37,13 +37,21 @@ const els = {
   deleteSpec: $('delete-spec'),
   renameWrap: $('rename-wrap'),
   renameInput: $('rename-input'),
+  billingModal: $('billing-modal'),
+  billingTitle: $('billing-modal-title'),
+  billingMessage: $('billing-modal-message'),
+  billingPrimary: $('billing-modal-primary'),
+  billingSecondary: $('billing-modal-secondary'),
+  billingClose: $('billing-modal-close'),
   toast: $('toast')
 };
+
+const billingModalActions = { primary: null, secondary: null };
 
 const progressSteps = [
   { at: 0, pct: 6, label: 'Checking account access' },
   { at: 3, pct: 14, label: 'Preparing description' },
-  { at: 8, pct: 24, label: 'Sending to DeepSeek reasoning' },
+  { at: 8, pct: 24, label: 'Starting reasoning pass' },
   { at: 18, pct: 38, label: 'Deriving architecture and modules' },
   { at: 35, pct: 54, label: 'Deriving data, API, UI, billing, and deploy logic' },
   { at: 60, pct: 72, label: 'Validating SPEX structure' },
@@ -61,6 +69,45 @@ function showStatus(title, message) {
   els.outputTitle.textContent = title;
   els.output.textContent = message;
   toast(title);
+}
+function cleanErrorMessage(error, fallback = 'Something went wrong. Please try again.') {
+  const raw = error && error.data && error.data.error || error && error.message || '';
+  const text = String(raw).trim();
+  if (!text) return fallback;
+  if (/(stripe|supabase|deepseek|provider|api route|api key|secret|token|not configured|request failed|http\s*\d|invalid json|failed to fetch)/i.test(text)) return fallback;
+  if (text.length > 220) return fallback;
+  return text;
+}
+function closeBillingModal() {
+  if (!els.billingModal) return;
+  els.billingModal.classList.add('hidden');
+  billingModalActions.primary = null;
+  billingModalActions.secondary = null;
+}
+function showBillingModal(title, message, options = {}) {
+  if (!els.billingModal) return toast(title);
+  els.billingTitle.textContent = title;
+  els.billingMessage.textContent = message;
+  els.billingPrimary.textContent = options.primaryLabel || 'Buy one SPEX';
+  els.billingSecondary.textContent = options.secondaryLabel || 'Subscribe monthly';
+  billingModalActions.primary = options.primaryAction || (() => startCheckout('single', els.buySingle));
+  billingModalActions.secondary = options.secondaryAction || (() => startCheckout('monthly', els.buyMonthly));
+  els.billingSecondary.classList.toggle('hidden', options.secondaryLabel === null);
+  els.billingModal.classList.remove('hidden');
+  toast(title);
+}
+function runBillingAction(action) {
+  closeBillingModal();
+  if (typeof action === 'function') action();
+}
+function safeRedirect(url, fallbackTitle = 'Link could not open') {
+  const target = new URL(url, window.location.href);
+  if (!['http:', 'https:'].includes(target.protocol)) throw new Error(fallbackTitle);
+  window.location.assign(target.href);
+}
+async function safeRun(action, fallbackMessage) {
+  try { return await action(); }
+  catch (error) { toast(cleanErrorMessage(error, fallbackMessage)); return null; }
 }
 function setProgress(percent, label, elapsed) {
   if (!els.progressPanel) return;
@@ -150,15 +197,44 @@ function setButtonBusy(button, isBusy, text) {
   button.disabled = isBusy;
   button.textContent = isBusy ? text : button.dataset.originalText;
 }
+function deriveAccess(profile, data = {}) {
+  if (data.access && data.access.state) return data.access;
+  const status = String(profile.subscription_status || 'none').toLowerCase();
+  const credits = Number(profile.single_spec_credits || 0);
+  const periodEnd = profile.subscription_current_period_end ? new Date(profile.subscription_current_period_end).getTime() : null;
+  const periodActive = !periodEnd || periodEnd > Date.now();
+  if (status === 'trialing' && periodActive) return { state: 'trial', canGenerate: true, credits };
+  if (status === 'active' && periodActive) return { state: 'paid', canGenerate: true, credits };
+  if (['past_due', 'unpaid', 'incomplete', 'incomplete_expired'].includes(status)) return { state: 'past_due', canGenerate: credits > 0, credits };
+  if (credits > 0) return { state: 'credit', canGenerate: true, credits };
+  return { state: 'expired', canGenerate: false, credits };
+}
+function creditPhrase(credits) {
+  return `${credits} generation credit${credits === 1 ? '' : 's'}`;
+}
 function renderAccount(data) {
   const profile = data.profile || {};
-  els.accountLabel.textContent = data.user && data.user.email ? data.user.email : 'Account';
-  const active = Boolean(data.subscription_active);
   const credits = Number(profile.single_spec_credits || 0);
-  els.planStatus.textContent = active ? 'Subscription active' : credits > 0 ? 'Generation credit available' : 'Payment required';
-  els.creditStatus.textContent = active ? `Plan status: ${profile.subscription_status || 'active'}` : `${credits} generation credit${credits === 1 ? '' : 's'} available`;
+  const access = deriveAccess(profile, data);
+  const labels = { paid: 'Paid', trial: 'Trial', credit: 'Credit', past_due: 'Past due', expired: 'Expired' };
+  const status = String(profile.subscription_status || 'none').replace(/_/g, ' ');
+  const details = {
+    paid: `Subscription paid and active. ${creditPhrase(credits)} available.`,
+    trial: `Trial access active. ${creditPhrase(credits)} available.`,
+    credit: `${creditPhrase(credits)} available.`,
+    past_due: credits > 0 ? `Payment past due. ${creditPhrase(credits)} still available.` : 'Payment past due. Update billing to continue.',
+    expired: 'No active paid access. Buy one SPEX or subscribe monthly.'
+  };
+  els.accountLabel.textContent = data.user && data.user.email ? data.user.email : 'Account';
+  els.planStatus.dataset.accessState = access.state;
+  els.planStatus.textContent = labels[access.state] || 'Expired';
+  els.creditStatus.textContent = `${details[access.state] || details.expired} Plan status: ${status}.`;
 }
-async function loadAccount() { renderAccount(await api('/api/me', { method: 'GET' })); }
+async function loadAccount() {
+  const data = await api('/api/me', { method: 'GET' });
+  renderAccount(data);
+  return data;
+}
 function renderSpecs(specs) {
   els.specList.innerHTML = '';
   if (!specs.length) {
@@ -178,11 +254,15 @@ function renderSpecs(specs) {
     const meta = document.createElement('span');
     meta.textContent = `${spec.type || 'SPEX'} · ${formatDate(spec.created_at)}`;
     button.append(title, meta);
-    button.addEventListener('click', () => loadSpec(spec.id));
+    button.addEventListener('click', () => safeRun(() => loadSpec(spec.id), 'Saved SPEX could not open. Please try again.'));
     els.specList.appendChild(button);
   });
 }
-async function loadSpecs() { renderSpecs((await api('/api/specs', { method: 'GET' })).specs || []); }
+async function loadSpecs() {
+  const data = await api('/api/specs', { method: 'GET' });
+  renderSpecs(data.specs || []);
+  return data;
+}
 async function loadSpec(id) {
   const spec = (await api(`/api/specs/${id}`, { method: 'GET' })).spec;
   selectedSpecId = spec.id;
@@ -203,15 +283,28 @@ async function generate(event) {
     const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body), timeoutMs: 180000 });
     currentOutput = data.spec.output;
     completeProgress();
-    els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || 'Generated SPEX';
+    if (data.saved === false) {
+      els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · not saved · ${Math.round(data.timing_ms / 1000)}s` : 'Generated SPEX · not saved';
+      toast('Generated. Download or copy it now.');
+    } else {
+      els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || 'Generated SPEX';
+      toast('Generated and saved.');
+    }
     els.output.textContent = pretty(currentOutput);
-    toast('Generated and saved.');
-    await loadAccount();
-    await loadSpecs();
+    await safeRun(loadAccount, 'Account status could not refresh.');
+    await safeRun(loadSpecs, 'Saved SPEX could not refresh.');
   } catch (error) {
-    if (error.status === 402) { failProgress('Payment required'); showStatus('Payment required', 'Buy one SPEX or subscribe monthly to generate.'); }
-    else if (error.status === 504) { failProgress('Generation timed out'); showStatus('Generation timed out', `${error.message} Try a shorter product description or run it again.`); }
-    else { failProgress('Generation failed'); showStatus('Generation failed', error.message); }
+    if (error.status === 402) {
+      failProgress('Payment required');
+      showBillingModal('Payment required', cleanErrorMessage(error, 'Buy one SPEX or subscribe monthly to generate.'), {
+        primaryLabel: 'Buy one SPEX',
+        primaryAction: () => startCheckout('single', els.buySingle),
+        secondaryLabel: 'Subscribe monthly',
+        secondaryAction: () => startCheckout('monthly', els.buyMonthly)
+      });
+    }
+    else if (error.status === 504) { failProgress('Generation timed out'); showStatus('Generation timed out', cleanErrorMessage(error, 'Generation is taking too long. Try a shorter product description or run it again.')); }
+    else { failProgress('Generation failed'); showStatus('Generation failed', cleanErrorMessage(error, 'Generation could not finish. Please try again.')); }
   } finally {
     setBusy(false);
   }
@@ -220,61 +313,114 @@ async function startCheckout(plan, button) {
   setButtonBusy(button, true, 'Opening checkout...');
   try {
     const data = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }), timeoutMs: 30000 });
-    if (!data.url) throw new Error('Stripe checkout did not return a URL.');
-    window.location.href = data.url;
+    if (!data.url) throw new Error('Checkout did not return a recovery link.');
+    safeRedirect(data.url, 'Checkout could not open');
   } catch (error) {
-    showStatus('Checkout failed', error.message);
     setButtonBusy(button, false);
+    showBillingModal('Checkout could not open', cleanErrorMessage(error, 'Checkout could not open. Please try again.'), {
+      primaryLabel: 'Try again',
+      primaryAction: () => startCheckout(plan, button),
+      secondaryLabel: plan === 'single' ? 'Subscribe monthly' : 'Buy one SPEX',
+      secondaryAction: () => plan === 'single' ? startCheckout('monthly', els.buyMonthly) : startCheckout('single', els.buySingle)
+    });
   }
 }
 async function openPortal() {
   setButtonBusy(els.portal, true, 'Opening billing...');
   try {
     const data = await api('/api/billing/portal', { method: 'POST', body: JSON.stringify({}), timeoutMs: 30000 });
-    if (!data.url) throw new Error('Stripe billing portal did not return a URL.');
-    window.location.href = data.url;
+    if (!data.url) throw new Error('Billing did not return a recovery link.');
+    if (data.mode === 'checkout') toast('Opening checkout to recover billing.');
+    safeRedirect(data.url, 'Billing could not open');
   } catch (error) {
-    showStatus('Billing failed', error.message);
     setButtonBusy(els.portal, false);
+    showBillingModal('Billing could not open', cleanErrorMessage(error, 'Billing could not open. Please try again.'), {
+      primaryLabel: 'Open subscription checkout',
+      primaryAction: () => startCheckout('monthly', els.buyMonthly),
+      secondaryLabel: 'Buy one SPEX',
+      secondaryAction: () => startCheckout('single', els.buySingle)
+    });
   }
 }
 async function renameSelected() {
   if (!selectedSpecId) return;
   const title = els.renameInput.value.trim();
   if (!title) return toast('Title is required.');
-  await api(`/api/specs/${selectedSpecId}`, { method: 'PATCH', body: JSON.stringify({ title }) });
-  toast('Renamed.');
-  await loadSpecs();
-  await loadSpec(selectedSpecId);
+  await safeRun(async () => {
+    await api(`/api/specs/${selectedSpecId}`, { method: 'PATCH', body: JSON.stringify({ title }) });
+    toast('Renamed.');
+    await safeRun(loadSpecs, 'Saved SPEX could not refresh.');
+    await loadSpec(selectedSpecId);
+  }, 'Rename could not be saved. Please try again.');
 }
 async function deleteSelected() {
   if (!selectedSpecId) return;
-  await api(`/api/specs/${selectedSpecId}`, { method: 'DELETE' });
-  selectedSpecId = null;
-  els.detailTitle.textContent = 'Select a saved SPEX';
-  els.detailOutput.textContent = '';
-  els.renameWrap.classList.add('hidden');
-  els.deleteSpec.classList.add('hidden');
-  toast('Deleted.');
-  await loadSpecs();
+  await safeRun(async () => {
+    await api(`/api/specs/${selectedSpecId}`, { method: 'DELETE' });
+    selectedSpecId = null;
+    els.detailTitle.textContent = 'Select a saved SPEX';
+    els.detailOutput.textContent = '';
+    els.renameWrap.classList.add('hidden');
+    els.deleteSpec.classList.add('hidden');
+    toast('Deleted.');
+    await safeRun(loadSpecs, 'Saved SPEX could not refresh.');
+  }, 'Delete could not finish. Please try again.');
 }
 function downloadCurrent() {
   if (!currentOutput) return toast('No generated SPEX to download.');
-  const blob = new Blob([pretty(currentOutput)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `bndr-spex-${Date.now()}.json`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  try {
+    const blob = new Blob([pretty(currentOutput)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `bndr-spex-${Date.now()}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  } catch (_) {
+    toast('Download could not start. Copy the SPEX instead.');
+  }
 }
 async function copyCurrent() {
   if (!currentOutput) return toast('No generated SPEX to copy.');
-  await navigator.clipboard.writeText(pretty(currentOutput));
-  toast('Copied.');
+  try {
+    await navigator.clipboard.writeText(pretty(currentOutput));
+    toast('Copied.');
+  } catch (_) {
+    downloadCurrent();
+    toast('Clipboard unavailable. Download started.');
+  }
 }
 function applyPriceLabels() {
   els.buySingle.textContent = `Buy one SPEX · ${env.PRICE_SINGLE_DISPLAY || '$7'}`;
   els.buyMonthly.textContent = `Subscribe monthly · ${env.PRICE_MONTHLY_DISPLAY || '$9/mo'}`;
+}
+function clearCheckoutParams() {
+  const clean = `${window.location.pathname}${window.location.hash || ''}`;
+  window.history.replaceState({}, document.title, clean);
+}
+async function recoverCheckoutReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const checkout = params.get('checkout');
+  const sessionId = params.get('session_id');
+  if (checkout === 'cancelled') {
+    toast('Checkout cancelled.');
+    clearCheckoutParams();
+    return;
+  }
+  if (checkout !== 'success' || !sessionId) return;
+  toast('Confirming billing...');
+  try {
+    const data = await api('/api/billing/confirm', { method: 'POST', body: JSON.stringify({ session_id: sessionId }), timeoutMs: 30000 });
+    if (data.profile) renderAccount({ user: session && session.user, profile: data.profile, access: data.access });
+    toast(data.pending ? 'Checkout is still processing. Billing will refresh shortly.' : 'Billing updated.');
+    clearCheckoutParams();
+  } catch (error) {
+    showBillingModal('Billing is still catching up', cleanErrorMessage(error, 'Checkout finished. Billing will refresh shortly.'), {
+      primaryLabel: 'Refresh account',
+      primaryAction: () => safeRun(loadAccount, 'Account status could not refresh.'),
+      secondaryLabel: 'Open billing',
+      secondaryAction: openPortal
+    });
+  }
 }
 async function init() {
   applyPriceLabels();
@@ -283,13 +429,25 @@ async function init() {
   els.buySingle.addEventListener('click', () => startCheckout('single', els.buySingle));
   els.buyMonthly.addEventListener('click', () => startCheckout('monthly', els.buyMonthly));
   els.portal.addEventListener('click', openPortal);
-  els.refresh.addEventListener('click', async () => { await loadAccount(); await loadSpecs(); toast('Refreshed.'); });
+  els.billingClose.addEventListener('click', closeBillingModal);
+  els.billingPrimary.addEventListener('click', () => runBillingAction(billingModalActions.primary));
+  els.billingSecondary.addEventListener('click', () => runBillingAction(billingModalActions.secondary));
+  els.billingModal.addEventListener('click', (event) => { if (event.target === els.billingModal) closeBillingModal(); });
+  els.refresh.addEventListener('click', async () => {
+    await safeRun(loadAccount, 'Account status could not refresh.');
+    await safeRun(loadSpecs, 'Saved SPEX could not refresh.');
+    toast('Refreshed.');
+  });
   els.deleteSpec.addEventListener('click', deleteSelected);
   els.renameInput.addEventListener('change', renameSelected);
   els.copyOutput.addEventListener('click', copyCurrent);
   els.downloadOutput.addEventListener('click', downloadCurrent);
-  els.signout.addEventListener('click', async () => { await supabase.auth.signOut(); window.location.href = '/login.html'; });
-  await loadAccount();
-  await loadSpecs();
+  els.signout.addEventListener('click', async () => {
+    await safeRun(() => supabase.auth.signOut(), 'Sign out could not finish cleanly.');
+    window.location.href = '/login.html';
+  });
+  await recoverCheckoutReturn();
+  await safeRun(loadAccount, 'Account status could not load.');
+  await safeRun(loadSpecs, 'Saved SPEX could not load.');
 }
-init().catch((error) => { showStatus('App failed to initialize', error.message); });
+init().catch((error) => { showStatus('App failed to initialize', cleanErrorMessage(error, 'The app could not start. Refresh and sign in again.')); });

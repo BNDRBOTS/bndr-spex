@@ -93,6 +93,7 @@ These commands verify syntax, required files, security-critical source checks, p
 npm run check
 npm run audit:project
 npm run test:smoke
+npm run test:flow
 ```
 
 The smoke test uses local process environment values that are intentionally fake and only checks local routing/security behavior. It does not call DeepSeek, Stripe Checkout, or Supabase with real credentials.
@@ -103,4 +104,6 @@ The smoke test uses local process environment values that are intentionally fake
 - Server secrets stay server-side: `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET` are never written to public assets.
 - Generation does not use local storage or browser-side persistence. Specs are saved through server-side Supabase REST calls.
 - One-off credits are consumed atomically with spec saving through the `save_spec_with_credit` RPC.
-- Stripe webhook events are idempotent through `record_billing_event_once`.
+- Checkout credit grants are idempotent through `grant_spec_credit_once`, so webhook and return-page recovery cannot double-grant the same Checkout Session.
+- Stripe webhook events are idempotent through `record_billing_event_once`; failed sync attempts release their marker so Stripe retries can repair billing state.
+- Returning from Stripe with `session_id` triggers checkout confirmation in the app, which helps recover access if a webhook is delayed.
