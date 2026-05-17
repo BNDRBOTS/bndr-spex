@@ -31,6 +31,13 @@
     </section>
 
     <aside class="col-right" aria-label="SPEX output and saved work">
+      <section id="progress-panel" class="glass-panel meta-section progress-panel hidden" aria-live="polite">
+        <div class="meta-title">Generation progress <span id="progress-percent">0%</span></div>
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+        <div id="progress-step" class="progress-step">Preparing request</div>
+        <div id="progress-elapsed" class="progress-elapsed">0s elapsed</div>
+      </section>
+
       <section class="glass-panel meta-section output-panel">
         <div class="meta-title">Generated SPEX</div>
         <div class="output-container">
