@@ -7,6 +7,7 @@ let session = null;
 let currentOutput = null;
 let selectedSpecId = null;
 let progressTimer = null;
+let progressStartedAt = 0;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -22,6 +23,11 @@ const els = {
   form: $('generate-form'),
   goal: $('goal_description'),
   generateButton: $('generate-button'),
+  progressPanel: $('progress-panel'),
+  progressFill: $('progress-fill'),
+  progressPercent: $('progress-percent'),
+  progressStep: $('progress-step'),
+  progressElapsed: $('progress-elapsed'),
   output: $('output'),
   outputTitle: $('output-title'),
   copyOutput: $('copy-output'),
@@ -34,6 +40,17 @@ const els = {
   toast: $('toast')
 };
 
+const progressSteps = [
+  { at: 0, pct: 6, label: 'Checking account access' },
+  { at: 3, pct: 14, label: 'Preparing description' },
+  { at: 8, pct: 24, label: 'Sending to DeepSeek reasoning' },
+  { at: 18, pct: 38, label: 'Deriving architecture and modules' },
+  { at: 35, pct: 54, label: 'Deriving data, API, UI, billing, and deploy logic' },
+  { at: 60, pct: 72, label: 'Validating SPEX structure' },
+  { at: 90, pct: 86, label: 'Waiting for final model response' },
+  { at: 115, pct: 94, label: 'Finalizing saved SPEX' }
+];
+
 function toast(message) {
   els.toast.textContent = message;
   els.toast.classList.add('visible');
@@ -45,16 +62,45 @@ function showStatus(title, message) {
   els.output.textContent = message;
   toast(title);
 }
+function setProgress(percent, label, elapsed) {
+  if (!els.progressPanel) return;
+  els.progressPanel.classList.remove('hidden');
+  els.progressFill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  els.progressPercent.textContent = `${Math.round(percent)}%`;
+  els.progressStep.textContent = label;
+  els.progressElapsed.textContent = `${elapsed}s elapsed`;
+}
 function beginProgress() {
-  const started = Date.now();
+  progressStartedAt = Date.now();
   clearInterval(progressTimer);
+  setProgress(6, 'Checking account access', 0);
   progressTimer = setInterval(() => {
-    const seconds = Math.floor((Date.now() - started) / 1000);
+    const seconds = Math.floor((Date.now() - progressStartedAt) / 1000);
+    const current = [...progressSteps].reverse().find((step) => seconds >= step.at) || progressSteps[0];
+    const next = progressSteps.find((step) => step.at > current.at);
+    let percent = current.pct;
+    if (next) {
+      const span = next.at - current.at;
+      const offset = seconds - current.at;
+      percent = current.pct + ((next.pct - current.pct) * Math.min(1, offset / span));
+    }
+    setProgress(percent, current.label, seconds);
     els.outputTitle.textContent = `Generating SPEX... ${seconds}s`;
-    els.output.textContent = 'DeepSeek reasoning is running. This should finish or fail visibly within about 2 minutes.';
+    els.output.textContent = 'Reasoning is still running. The SPEX will appear here when the model returns and the database save completes.';
   }, 1000);
 }
-function endProgress() { clearInterval(progressTimer); progressTimer = null; }
+function completeProgress() {
+  const elapsed = Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1000));
+  setProgress(100, 'SPEX generated and saved', elapsed);
+  clearInterval(progressTimer);
+  progressTimer = null;
+}
+function failProgress(label) {
+  const elapsed = Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1000));
+  setProgress(100, label, elapsed);
+  clearInterval(progressTimer);
+  progressTimer = null;
+}
 
 async function requireSession() {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) throw new Error('Sign-in is not connected.');
@@ -154,19 +200,19 @@ async function generate(event) {
   beginProgress();
   currentOutput = null;
   try {
-    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body), timeoutMs: 130000 });
+    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body), timeoutMs: 180000 });
     currentOutput = data.spec.output;
+    completeProgress();
     els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || 'Generated SPEX';
     els.output.textContent = pretty(currentOutput);
     toast('Generated and saved.');
     await loadAccount();
     await loadSpecs();
   } catch (error) {
-    if (error.status === 402) showStatus('Payment required', 'Buy one SPEX or subscribe monthly to generate.');
-    else if (error.status === 504) showStatus('Generation timed out', `${error.message} Try a shorter product description or run it again.`);
-    else showStatus('Generation failed', error.message);
+    if (error.status === 402) { failProgress('Payment required'); showStatus('Payment required', 'Buy one SPEX or subscribe monthly to generate.'); }
+    else if (error.status === 504) { failProgress('Generation timed out'); showStatus('Generation timed out', `${error.message} Try a shorter product description or run it again.`); }
+    else { failProgress('Generation failed'); showStatus('Generation failed', error.message); }
   } finally {
-    endProgress();
     setBusy(false);
   }
 }
