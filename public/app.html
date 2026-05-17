@@ -2,99 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>App | BNDR | SPEX</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <header class="site-header app-header">
-    <a class="brand" href="/">BNDR<span>SPEX</span></a>
-    <nav class="nav">
-      <span id="account-label" class="muted"></span>
-      <button id="portal" class="button button-secondary button-small">Billing</button>
-      <button id="signout" class="button button-small">Sign out</button>
+<body class="spex-body">
+  <header class="site-header app-header spex-header">
+    <a class="brand" href="/">BNDR<span>|</span>SPEX</a>
+    <nav class="nav spex-nav" aria-label="Account navigation">
+      <span id="account-label" class="muted account-chip"></span>
+      <button id="portal" class="button button-secondary button-small" type="button">Billing</button>
+      <button id="signout" class="button button-small" type="button">Sign out</button>
     </nav>
   </header>
 
-  <main class="app-shell">
-    <aside class="sidebar">
-      <section class="card compact">
+  <main class="spex-app-shell">
+    <section class="spex-primary">
+      <form id="generate-form" class="card spex-generator">
+        <div class="spex-generator-head">
+          <div>
+            <p class="eyebrow">One description in. Full SPEX out.</p>
+            <h1>Product description</h1>
+            <p class="spex-lede">Describe the product, app, workflow, API, automation, or system you want turned into a complete build-ready SPEX.</p>
+          </div>
+          <button id="generate-button" class="button spex-generate-button" type="submit">Generate SPEX</button>
+        </div>
+        <label class="spex-description-label" for="goal_description">Product description</label>
+        <textarea id="goal_description" required minlength="8" rows="10" placeholder="Describe the product, app, workflow, API, automation, or system you want turned into a complete build-ready SPEX."></textarea>
+        <div class="spex-derive-strip" aria-label="Auto-derived SPEX sections">
+          <span>Architecture</span>
+          <span>Data model</span>
+          <span>API routes</span>
+          <span>UI states</span>
+          <span>Billing logic</span>
+          <span>Deploy path</span>
+        </div>
+      </form>
+
+      <article class="card spex-output-card">
+        <div class="between spex-output-head">
+          <div>
+            <p class="eyebrow">Generated SPEX</p>
+            <h2 id="output-title">Nothing generated yet</h2>
+          </div>
+          <div class="button-row">
+            <button id="copy-output" class="button button-secondary button-small" type="button">Copy</button>
+            <button id="download-output" class="button button-secondary button-small" type="button">Download</button>
+          </div>
+        </div>
+        <pre id="output" class="output-box spex-output-box"></pre>
+      </article>
+    </section>
+
+    <aside class="spex-side-stack" aria-label="Account, access, and saved SPEX">
+      <section class="card compact spex-panel">
         <p class="eyebrow">Account</p>
         <h2 id="plan-status">Loading</h2>
         <p id="credit-status" class="muted"></p>
       </section>
-      <section class="card compact">
-        <p class="eyebrow">Payments</p>
-        <button id="buy-single" class="button button-full" data-single-label>Buy one spec</button>
-        <button id="buy-monthly" class="button button-secondary button-full" data-monthly-label>Subscribe monthly</button>
+
+      <section class="card compact spex-panel">
+        <p class="eyebrow">Access</p>
+        <button id="buy-single" class="button button-full" type="button">Buy one SPEX</button>
+        <button id="buy-monthly" class="button button-secondary button-full" type="button">Subscribe monthly</button>
       </section>
-      <section class="card compact specs-panel">
+
+      <section class="card compact spex-panel specs-panel">
         <div class="between">
-          <p class="eyebrow">Saved specs</p>
-          <button id="refresh" class="link-button">Refresh</button>
+          <p class="eyebrow">Saved SPEX</p>
+          <button id="refresh" class="link-button" type="button">Refresh</button>
         </div>
         <div id="spec-list" class="saved-list"></div>
       </section>
-    </aside>
 
-    <section class="workspace">
-      <div class="tool-tabs" role="tablist" aria-label="Generator mode">
-        <button class="tab active" data-mode="system">System Spec</button>
-        <button class="tab" data-mode="schema">Structured Schema</button>
-      </div>
-
-      <form id="generate-form" class="generator card">
-        <div class="form-head">
+      <section class="card compact spex-panel spex-detail-panel">
+        <div class="between">
           <div>
-            <p class="eyebrow" id="mode-eyebrow">Build-ready spec generator</p>
-            <h1 id="mode-title">Generate a complete build spec.</h1>
+            <p class="eyebrow">Saved detail</p>
+            <h2 id="detail-title">Select a saved SPEX</h2>
           </div>
-          <button class="button" type="submit">Generate</button>
+          <button id="delete-spec" class="button button-danger button-small hidden" type="button">Delete</button>
         </div>
-        <label>Goal description<textarea id="goal_description" required minlength="8" rows="5"></textarea></label>
-        <div id="system-fields" class="grid-two">
-          <label>Runtime model<input id="runtime_model"></label>
-          <label>System scope<input id="system_scope"></label>
-          <label>Target platforms<input id="target_platforms"></label>
-          <label>Constraints<input id="constraints"></label>
-          <label>Dependencies<textarea id="dependencies" rows="3"></textarea></label>
-          <label>Design requirements<textarea id="design_requirements" rows="3"></textarea></label>
-          <label>Data requirements<textarea id="data_requirements" rows="3"></textarea></label>
-        </div>
-        <div id="schema-fields" class="grid-two hidden">
-          <label>Runtime model<input id="schema_runtime_model"></label>
-          <label>Constraints<input id="schema_constraints"></label>
-          <label class="span-two">Dependencies<textarea id="schema_dependencies" rows="3"></textarea></label>
-        </div>
-      </form>
-
-      <section class="output-grid">
-        <article class="card output-card">
-          <div class="between">
-            <div>
-              <p class="eyebrow">Generated output</p>
-              <h2 id="output-title">Nothing generated yet</h2>
-            </div>
-            <div class="button-row">
-              <button id="copy-output" class="button button-secondary button-small">Copy</button>
-              <button id="download-output" class="button button-secondary button-small">Download</button>
-            </div>
-          </div>
-          <pre id="output" class="output-box"></pre>
-        </article>
-        <article class="card detail-card">
-          <div class="between">
-            <div>
-              <p class="eyebrow">Saved detail</p>
-              <h2 id="detail-title">Select a saved spec</h2>
-            </div>
-            <button id="delete-spec" class="button button-danger button-small hidden">Delete</button>
-          </div>
-          <label class="hidden" id="rename-wrap">Rename<input id="rename-input"></label>
-          <pre id="detail-output" class="output-box small"></pre>
-        </article>
+        <label class="hidden" id="rename-wrap" for="rename-input">Rename<input id="rename-input"></label>
+        <pre id="detail-output" class="output-box small spex-detail-output"></pre>
       </section>
-    </section>
+    </aside>
   </main>
 
   <div id="toast" class="toast" role="status"></div>
