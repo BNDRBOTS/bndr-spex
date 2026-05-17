@@ -55,13 +55,19 @@
     document.getElementById('signup').addEventListener('click', async () => {
       setMessage('Creating account...');
       const { email, password } = values();
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/app.html`
+        }
+      });
       if (error) return setMessage(error.message);
       if (data && data.session) {
         window.location.href = '/app.html';
         return;
       }
-      setMessage('Account created. Check your email to confirm it, then sign in.');
+      setMessage('Account created. Confirm your email, then sign in.');
     });
   </script>
 </body>
