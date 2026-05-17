@@ -79,6 +79,19 @@
     </aside>
   </main>
 
+  <div id="billing-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="billing-modal-title">
+    <div class="billing-modal">
+      <div class="meta-title">Billing recovery</div>
+      <h2 id="billing-modal-title">Billing needs attention</h2>
+      <p id="billing-modal-message" class="muted"></p>
+      <div class="modal-actions">
+        <button id="billing-modal-primary" class="pill-button pill-primary" type="button">Open billing</button>
+        <button id="billing-modal-secondary" class="pill-button" type="button">Subscribe monthly</button>
+        <button id="billing-modal-close" class="pill-button" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status"></div>
   <script src="/env.js"></script>
   <script type="module" src="/app.js"></script>

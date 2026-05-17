@@ -7,6 +7,14 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const MAX_BODY_BYTES = 1024 * 1024;
 const STRIPE_API = 'https://api.stripe.com/v1';
+const DEFAULT_TIMEOUT_MS = Number(process.env.OUTBOUND_TIMEOUT_MS || 45000);
+const SUPABASE_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS || 15000);
+const STRIPE_TIMEOUT_MS = Number(process.env.STRIPE_TIMEOUT_MS || 20000);
+const DEEPSEEK_TIMEOUT_MS = Number(process.env.DEEPSEEK_TIMEOUT_MS || 165000);
+const SERVER_REQUEST_TIMEOUT_MS = Number(process.env.SERVER_REQUEST_TIMEOUT_MS || 190000);
+const ACCOUNT_RETRY_ATTEMPTS = Number(process.env.ACCOUNT_RETRY_ATTEMPTS || 1);
+const BILLING_RETRY_ATTEMPTS = Number(process.env.BILLING_RETRY_ATTEMPTS || 1);
+const OUTBOUND_RETRY_DELAY_MS = Number(process.env.OUTBOUND_RETRY_DELAY_MS || 300);
 
 const systemSpecKeys = [
   'system_overview',
@@ -98,6 +106,40 @@ function send(res, status, payload, headers = {}) {
   res.writeHead(status, { ...securityHeaders(type), ...headers });
   res.end(body);
 }
+function appError(message, status = 500, code = 'server_error', publicMessage = message) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  error.publicMessage = publicMessage;
+  return error;
+}
+function configError(name) {
+  return appError(`${name} is not configured`, 500, 'service_unavailable', 'This service is temporarily unavailable. Please try again shortly.');
+}
+function servicePublicMessage(service, status) {
+  if (service === 'billing') return status === 504 ? 'Billing is taking too long to respond. Please try again.' : 'Billing is unavailable right now. Please try again.';
+  if (service === 'generation') return status === 504 ? 'Generation is taking too long to respond. Please try again.' : 'Generation could not finish right now. Please try again.';
+  if (service === 'account') return status === 504 ? 'Account data is taking too long to respond. Please try again.' : 'Account data is unavailable right now. Please try again.';
+  return status === 504 ? 'The request timed out. Please try again.' : 'The request could not be completed. Please try again.';
+}
+function publicErrorPayload(error, status) {
+  const safeStatuses = new Set([400, 401, 402, 403, 404, 405, 413]);
+  const message = error.publicMessage || (safeStatuses.has(status) ? error.message : 'Something went wrong. Please try again.');
+  const payload = { error: message };
+  if (error.code && !String(error.code).includes('secret')) payload.code = error.code;
+  if (status === 402) payload.plans = { single: publicEnv.PRICE_SINGLE_DISPLAY, monthly: publicEnv.PRICE_MONTHLY_DISPLAY };
+  return payload;
+}
+function redactLog(value) {
+  return String(value || '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9_]+\b/g, '[redacted-stripe-key]')
+    .replace(/\bwhsec_[A-Za-z0-9_]+\b/g, '[redacted-webhook-secret]')
+    .replace(/Bearer\s+[^\s,}]+/gi, 'Bearer [redacted]');
+}
+function logServerError(context, error) {
+  console.error(context, { status: error.status || 500, code: error.code || 'server_error', message: redactLog(error.message) });
+}
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -125,15 +167,54 @@ function titleFromInput(type, body) {
   const source = safeString(body.goal_description || body.title || type, 96);
   return source || (type === 'schema' ? 'Structured schema' : 'System specification');
 }
+function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function retryAttemptsForService(service) {
+  if (service === 'billing') return BILLING_RETRY_ATTEMPTS;
+  return 0;
+}
+function retryDelay(attempt) {
+  return OUTBOUND_RETRY_DELAY_MS * Math.pow(2, attempt) + Math.floor(Math.random() * 75);
+}
+function isRetryableError(error) {
+  const status = Number(error && error.status || 0);
+  return [408, 409, 425, 429, 500, 502, 503, 504].includes(status);
+}
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const text = await response.text();
+  const { retries, ...requestOptions } = options;
+  const service = requestOptions.service || 'request';
+  const maxRetries = Number.isFinite(Number(retries)) ? Number(retries) : retryAttemptsForService(service);
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try { return await fetchJsonOnce(url, requestOptions); }
+    catch (error) {
+      lastError = error;
+      if (attempt >= maxRetries || !isRetryableError(error)) throw error;
+      await delay(retryDelay(attempt));
+    }
+  }
+  throw lastError;
+}
+async function fetchJsonOnce(url, options = {}) {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, service = 'request', publicMessage, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  let text = '';
+  try {
+    response = await fetch(url, { ...fetchOptions, signal: fetchOptions.signal || controller.signal });
+    text = await response.text();
+  } catch (error) {
+    const status = error.name === 'AbortError' ? 504 : 502;
+    throw appError(`${service} request ${status === 504 ? 'timed out' : 'failed'}: ${error.message}`, status, `${service}_${status === 504 ? 'timeout' : 'unavailable'}`, publicMessage || servicePublicMessage(service, status));
+  } finally {
+    clearTimeout(timer);
+  }
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch (_) { data = { raw: text }; } }
   if (!response.ok) {
-    const message = data && data.error && (data.error.message || data.error) || data && data.message || `HTTP ${response.status}`;
-    const error = new Error(message);
-    error.status = response.status;
+    const detail = data && data.error && (data.error.message || data.error) || data && data.message || `HTTP ${response.status}`;
+    const status = response.status >= 500 ? 502 : response.status;
+    const error = appError(`${service} request failed (${response.status}): ${detail}`, status, `${service}_request_failed`, publicMessage || servicePublicMessage(service, status));
     error.data = data;
     throw error;
   }
@@ -141,14 +222,14 @@ async function fetchJson(url, options = {}) {
 }
 function supabaseUrl(pathname) {
   const base = process.env.SUPABASE_URL;
-  if (!base) throw Object.assign(new Error('SUPABASE_URL is not configured'), { status: 500 });
+  if (!base) throw configError('SUPABASE_URL');
   return `${base.replace(/\/$/, '')}${pathname}`;
 }
 async function supabaseRest(pathname, options = {}) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceKey) throw Object.assign(new Error('SUPABASE_SERVICE_ROLE_KEY is not configured'), { status: 500 });
+  if (!serviceKey) throw configError('SUPABASE_SERVICE_ROLE_KEY');
   const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', Prefer: options.prefer || 'return=representation', ...(options.headers || {}) };
-  return fetchJson(supabaseUrl(`/rest/v1${pathname}`), { ...options, headers });
+  return fetchJson(supabaseUrl(`/rest/v1${pathname}`), { ...options, headers, service: 'account', timeoutMs: options.timeoutMs || SUPABASE_TIMEOUT_MS });
 }
 async function verifyUser(req) {
   const auth = req.headers.authorization || '';
@@ -156,13 +237,13 @@ async function verifyUser(req) {
   if (!match) throw Object.assign(new Error('Authentication required'), { status: 401 });
   const token = match[1];
   const anonKey = process.env.SUPABASE_ANON_KEY;
-  if (!anonKey) throw Object.assign(new Error('SUPABASE_ANON_KEY is not configured'), { status: 500 });
-  const user = await fetchJson(supabaseUrl('/auth/v1/user'), { headers: { apikey: anonKey, Authorization: `Bearer ${token}` } });
+  if (!anonKey) throw configError('SUPABASE_ANON_KEY');
+  const user = await fetchJson(supabaseUrl('/auth/v1/user'), { headers: { apikey: anonKey, Authorization: `Bearer ${token}` }, service: 'account', timeoutMs: SUPABASE_TIMEOUT_MS, retries: ACCOUNT_RETRY_ATTEMPTS, publicMessage: 'Please sign in again.' });
   if (!user || !user.id) throw Object.assign(new Error('Invalid session'), { status: 401 });
   return { user, token };
 }
 async function getProfile(user) {
-  const rows = await supabaseRest(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=*`, { method: 'GET', prefer: 'return=representation' });
+  const rows = await supabaseRest(`/profiles?id=eq.${encodeURIComponent(user.id)}&select=*`, { method: 'GET', prefer: 'return=representation', retries: ACCOUNT_RETRY_ATTEMPTS });
   if (Array.isArray(rows) && rows[0]) return rows[0];
   const created = await supabaseRest('/profiles', { method: 'POST', body: JSON.stringify({ id: user.id, email: user.email || null }), headers: { Prefer: 'resolution=merge-duplicates,return=representation' } });
   return Array.isArray(created) ? created[0] : created;
@@ -172,25 +253,50 @@ async function updateProfileByUserId(userId, patch) {
   return Array.isArray(rows) ? rows[0] : rows;
 }
 async function getProfileByStripeCustomer(customerId) {
-  const rows = await supabaseRest(`/profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}&select=*`, { method: 'GET' });
+  const rows = await supabaseRest(`/profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}&select=*`, { method: 'GET', retries: ACCOUNT_RETRY_ATTEMPTS });
   return Array.isArray(rows) ? rows[0] : null;
+}
+async function getProfileBySubscription(subscriptionId) {
+  if (!subscriptionId) return null;
+  const rows = await supabaseRest(`/profiles?subscription_id=eq.${encodeURIComponent(subscriptionId)}&select=*`, { method: 'GET', retries: ACCOUNT_RETRY_ATTEMPTS });
+  return Array.isArray(rows) ? rows[0] : null;
+}
+function subscriptionWindowActive(profile) {
+  if (!profile || !profile.subscription_current_period_end) return true;
+  const periodEnd = new Date(profile.subscription_current_period_end).getTime();
+  return Number.isFinite(periodEnd) && periodEnd > Date.now();
 }
 function isSubscriptionActive(profile) {
   if (!profile) return false;
-  if (!['active', 'trialing'].includes(profile.subscription_status)) return false;
-  if (!profile.subscription_current_period_end) return true;
-  return new Date(profile.subscription_current_period_end).getTime() > Date.now();
+  const status = String(profile.subscription_status || 'none').toLowerCase();
+  return ['active', 'trialing'].includes(status) && subscriptionWindowActive(profile);
+}
+function accessState(profile) {
+  const status = String(profile && profile.subscription_status || 'none').toLowerCase();
+  const credits = Number(profile && profile.single_spec_credits || 0);
+  const periodActive = subscriptionWindowActive(profile);
+  const pastDueStatuses = new Set(['past_due', 'unpaid', 'incomplete', 'incomplete_expired']);
+  if (status === 'trialing' && periodActive) return { state: 'trial', label: 'Trial access', source: 'subscription', canGenerate: true, credits };
+  if (status === 'active' && periodActive) return { state: 'paid', label: 'Paid access', source: 'subscription', canGenerate: true, credits };
+  if (pastDueStatuses.has(status)) return { state: 'past_due', label: 'Past due', source: credits > 0 ? 'credit' : null, canGenerate: credits > 0, credits };
+  if (credits > 0) return { state: 'credit', label: 'Credit access', source: 'credit', canGenerate: true, credits };
+  return { state: 'expired', label: 'Expired', source: null, canGenerate: false, credits };
 }
 async function requireEntitlement(user) {
-  const profile = await getProfile(user);
-  if (isSubscriptionActive(profile)) return { profile, source: 'subscription' };
-  if ((profile.single_spec_credits || 0) > 0) return { profile, source: 'credit' };
-  const error = new Error('Payment required');
-  error.status = 402;
-  error.code = 'payment_required';
-  throw error;
+  let profile = await getProfile(user);
+  let access = accessState(profile);
+  if (!access.canGenerate && profile.subscription_id) {
+    profile = await refreshBillingProfile(profile);
+    access = accessState(profile);
+  }
+  if (isSubscriptionActive(profile)) return { profile, source: 'subscription', access };
+  if ((profile.single_spec_credits || 0) > 0) return { profile, source: 'credit', access };
+  throw appError('Payment required', 402, 'payment_required', 'Buy one SPEX or subscribe monthly to generate.');
 }
-async function grantCredit(userId, amount) {
+async function grantCredit(userId, amount, sourceId = null, sourcePayload = {}) {
+  if (sourceId) {
+    return supabaseRest('/rpc/grant_spec_credit_once', { method: 'POST', body: JSON.stringify({ target_user: userId, credit_count: amount, source_id: sourceId, source_type: 'checkout.credit', source_payload: sourcePayload }), prefer: 'return=representation' });
+  }
   return supabaseRest('/rpc/grant_spec_credits', { method: 'POST', body: JSON.stringify({ target_user: userId, credit_count: amount }), prefer: 'return=representation' });
 }
 function validateKeys(obj, requiredKeys) {
@@ -236,11 +342,11 @@ function parseModelJson(content) {
 }
 async function callDeepSeek({ mode, input }) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw Object.assign(new Error('DEEPSEEK_API_KEY is not configured'), { status: 500 });
+  if (!apiKey) throw configError('DEEPSEEK_API_KEY');
   const model = process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro';
   const isSystem = mode === 'system';
   const maxTokens = Number(process.env.DEEPSEEK_MAX_TOKENS || (isSystem ? 9000 : 4500));
-  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: deepSeekPrompt(mode) }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, thinking: { type: process.env.DEEPSEEK_THINKING || 'enabled' }, reasoning_effort: process.env.DEEPSEEK_REASONING_EFFORT || 'high', temperature: 0.2, max_tokens: maxTokens, stream: false }) });
+  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: deepSeekPrompt(mode) }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, thinking: { type: process.env.DEEPSEEK_THINKING || 'enabled' }, reasoning_effort: process.env.DEEPSEEK_REASONING_EFFORT || 'high', temperature: 0.2, max_tokens: maxTokens, stream: false }), service: 'generation', timeoutMs: DEEPSEEK_TIMEOUT_MS });
   const requestId = response.id || null;
   const content = response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content;
   const parsed = parseModelJson(content);
@@ -258,30 +364,56 @@ async function saveSpec(userId, type, title, input, result, entitlementSource) {
   return Array.isArray(rows) ? rows[0] : rows;
 }
 function formEncode(object) { const params = new URLSearchParams(); Object.entries(object).forEach(([key, value]) => { if (value !== undefined && value !== null) params.append(key, String(value)); }); return params.toString(); }
+function stripeIdempotencyKey() {
+  return `spex-${crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')}`;
+}
 async function stripeRequest(pathname, options = {}) {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw Object.assign(new Error('STRIPE_SECRET_KEY is not configured'), { status: 500 });
-  return fetchJson(`${STRIPE_API}${pathname}`, { ...options, headers: { Authorization: `Bearer ${key}`, ...(options.headers || {}) } });
+  if (!key) throw configError('STRIPE_SECRET_KEY');
+  const method = String(options.method || 'GET').toUpperCase();
+  const headers = { Authorization: `Bearer ${key}`, ...(options.headers || {}) };
+  if (method !== 'GET' && !headers['Idempotency-Key']) headers['Idempotency-Key'] = stripeIdempotencyKey();
+  return fetchJson(`${STRIPE_API}${pathname}`, { ...options, headers, service: 'billing', timeoutMs: options.timeoutMs || STRIPE_TIMEOUT_MS, retries: options.retries === undefined ? BILLING_RETRY_ATTEMPTS : options.retries });
 }
 async function createCheckoutSession(user, profile, plan) {
   const isMonthly = plan === 'monthly';
   const priceId = isMonthly ? stripeMonthlyPriceId() : stripeSinglePriceId();
-  if (!priceId) throw Object.assign(new Error('Stripe price is not configured'), { status: 500 });
+  if (!priceId) throw configError('STRIPE_PRICE_ID');
   const baseUrl = appBaseUrl();
-  if (!baseUrl) throw Object.assign(new Error('APP_BASE_URL is not configured'), { status: 500 });
+  if (!baseUrl) throw configError('APP_BASE_URL');
   const params = { mode: isMonthly ? 'subscription' : 'payment', success_url: `${baseUrl}/app.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/app.html?checkout=cancelled`, client_reference_id: user.id, 'metadata[user_id]': user.id, 'metadata[plan]': plan, 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1', allow_promotion_codes: 'true', billing_address_collection: 'required', 'phone_number_collection[enabled]': 'false', 'tax_id_collection[enabled]': 'true', 'consent_collection[terms_of_service]': 'required', 'custom_text[terms_of_service_acceptance][message]': `I agree to BNDR | SPEX Terms of Service: ${baseUrl}/terms.html` };
+  if (isMonthly) {
+    params['subscription_data[metadata][user_id]'] = user.id;
+    params['subscription_data[metadata][plan]'] = plan;
+  } else {
+    params['payment_intent_data[metadata][user_id]'] = user.id;
+    params['payment_intent_data[metadata][plan]'] = plan;
+  }
   if (process.env.STRIPE_AUTOMATIC_TAX === 'true') params['automatic_tax[enabled]'] = 'true';
   if (!isMonthly) params.customer_creation = 'always';
   if (profile.stripe_customer_id) { params.customer = profile.stripe_customer_id; params['customer_update[address]'] = 'auto'; params['customer_update[name]'] = 'auto'; } else if (user.email) { params.customer_email = user.email; }
   return stripeRequest('/checkout/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formEncode(params) });
 }
 async function createPortalSession(profile) {
-  if (!profile || !profile.stripe_customer_id) throw Object.assign(new Error('No Stripe customer for this account'), { status: 400 });
+  if (!profile || !profile.stripe_customer_id) return null;
   return stripeRequest('/billing_portal/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formEncode({ customer: profile.stripe_customer_id, return_url: `${appBaseUrl()}/app.html` }) });
+}
+async function createBillingEntrySession(user, profile) {
+  if (profile && profile.stripe_customer_id) {
+    try {
+      const portal = await createPortalSession(profile);
+      if (portal && portal.url) return { url: portal.url, mode: 'portal' };
+    } catch (error) {
+      logServerError('Billing portal fallback to checkout', error);
+    }
+  }
+  const checkoutProfile = profile && profile.stripe_customer_id ? { ...profile, stripe_customer_id: null } : profile;
+  const checkout = await createCheckoutSession(user, checkoutProfile || {}, 'monthly');
+  return { url: checkout.url, mode: 'checkout' };
 }
 function verifyStripeSignature(rawBody, signatureHeader) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) throw Object.assign(new Error('STRIPE_WEBHOOK_SECRET is not configured'), { status: 500 });
+  if (!secret) throw configError('STRIPE_WEBHOOK_SECRET');
   if (!signatureHeader) throw Object.assign(new Error('Missing Stripe signature'), { status: 400 });
   const parts = Object.fromEntries(signatureHeader.split(',').map((part) => { const [key, value] = part.split('='); return [key, value]; }));
   const timestamp = parts.t;
@@ -300,28 +432,101 @@ async function recordBillingEvent(event) {
   if (Array.isArray(result)) return result[0] === true;
   return Boolean(result);
 }
+function stripeObjectId(value) { return typeof value === 'string' ? value : value && value.id; }
+function stripeMetadataUserId(object) {
+  return object && (object.client_reference_id || object.metadata && object.metadata.user_id || object.subscription_details && object.subscription_details.metadata && object.subscription_details.metadata.user_id);
+}
+async function getProfileForBillingObject(object) {
+  const customerId = stripeObjectId(object && object.customer);
+  if (customerId) {
+    const profile = await getProfileByStripeCustomer(customerId);
+    if (profile) return profile;
+  }
+  const subscriptionId = stripeObjectId(object && object.subscription);
+  if (subscriptionId) {
+    const profile = await getProfileBySubscription(subscriptionId);
+    if (profile) return profile;
+  }
+  const userId = stripeMetadataUserId(object);
+  return userId ? { id: userId } : null;
+}
+async function retrieveSubscription(subscriptionId) {
+  if (!subscriptionId) return null;
+  return stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'GET' });
+}
+async function retrieveCheckoutSession(sessionId) {
+  if (!sessionId) return null;
+  return stripeRequest(`/checkout/sessions/${encodeURIComponent(sessionId)}`, { method: 'GET' });
+}
+function shouldRefreshBillingProfile(profile) {
+  if (!profile || !profile.subscription_id) return false;
+  const access = accessState(profile);
+  if (access.canGenerate && access.source === 'subscription') return false;
+  const status = String(profile.subscription_status || 'none').toLowerCase();
+  return ['none', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'canceled'].includes(status) || !subscriptionWindowActive(profile);
+}
+async function refreshBillingProfile(profile) {
+  if (!shouldRefreshBillingProfile(profile)) return profile;
+  try {
+    await handleSubscription(await retrieveSubscription(profile.subscription_id));
+    const rows = await supabaseRest(`/profiles?id=eq.${encodeURIComponent(profile.id)}&select=*`, { method: 'GET', retries: ACCOUNT_RETRY_ATTEMPTS });
+    return Array.isArray(rows) && rows[0] ? rows[0] : profile;
+  } catch (error) {
+    logServerError('Billing self-heal refresh failed', error);
+    return profile;
+  }
+}
 async function handleCheckoutCompleted(session) {
-  const userId = session.client_reference_id || session.metadata && session.metadata.user_id;
+  const userId = stripeMetadataUserId(session);
   if (!userId) return;
-  const patch = { stripe_customer_id: session.customer || null };
-  if (session.mode === 'subscription') { patch.subscription_id = session.subscription || null; patch.subscription_status = 'active'; }
+  const patch = { stripe_customer_id: stripeObjectId(session.customer) || null };
+  if (session.mode === 'subscription') {
+    const subscriptionId = stripeObjectId(session.subscription);
+    patch.subscription_id = subscriptionId || null;
+    patch.subscription_status = 'active';
+    await updateProfileByUserId(userId, patch);
+    if (subscriptionId) {
+      try { await handleSubscription(await retrieveSubscription(subscriptionId)); } catch (error) { logServerError('Subscription sync after checkout failed', error); }
+    }
+    return;
+  }
   await updateProfileByUserId(userId, patch);
-  if (session.mode === 'payment') await grantCredit(userId, 1);
+  if (session.mode === 'payment' && (!session.payment_status || session.payment_status === 'paid')) await grantCredit(userId, 1, session.id ? `checkout:${session.id}` : null, session);
 }
 async function handleSubscription(subscription) {
-  const customerId = subscription.customer;
-  if (!customerId) return;
-  const profile = await getProfileByStripeCustomer(customerId);
+  if (!subscription) return;
+  const profile = await getProfileForBillingObject(subscription);
   if (!profile) return;
   const periodEnd = subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null;
-  await updateProfileByUserId(profile.id, { subscription_id: subscription.id, subscription_status: subscription.status || 'none', subscription_current_period_end: periodEnd, cancel_at_period_end: Boolean(subscription.cancel_at_period_end) });
+  await updateProfileByUserId(profile.id, { stripe_customer_id: stripeObjectId(subscription.customer) || undefined, subscription_id: subscription.id, subscription_status: subscription.status || 'none', subscription_current_period_end: periodEnd, cancel_at_period_end: Boolean(subscription.cancel_at_period_end) });
 }
-async function handleInvoice(eventObject, status) {
-  const customerId = eventObject.customer;
-  if (!customerId) return;
-  const profile = await getProfileByStripeCustomer(customerId);
+async function handleInvoice(invoice, fallbackStatus) {
+  const subscriptionId = stripeObjectId(invoice && invoice.subscription);
+  if (!subscriptionId) return;
+  try {
+    await handleSubscription(await retrieveSubscription(subscriptionId));
+    return;
+  } catch (error) {
+    logServerError('Invoice subscription sync fallback', error);
+  }
+  const profile = await getProfileForBillingObject(invoice);
   if (!profile) return;
-  await updateProfileByUserId(profile.id, { subscription_status: status });
+  await updateProfileByUserId(profile.id, { subscription_id: subscriptionId, subscription_status: fallbackStatus });
+}
+async function releaseBillingEvent(eventId) {
+  if (!eventId) return;
+  try {
+    await supabaseRest(`/billing_events?id=eq.${encodeURIComponent(eventId)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  } catch (error) {
+    logServerError('Billing event retry release failed', error);
+  }
+}
+async function processStripeEvent(event) {
+  const object = event.data && event.data.object;
+  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') await handleCheckoutCompleted(object);
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') await handleSubscription(object);
+  if (event.type === 'invoice.payment_succeeded') await handleInvoice(object, 'active');
+  if (event.type === 'invoice.payment_failed' || event.type === 'invoice.payment_action_required') await handleInvoice(object, 'past_due');
 }
 async function handleStripeWebhook(req, res) {
   const raw = await readRawBody(req);
@@ -330,11 +535,12 @@ async function handleStripeWebhook(req, res) {
   try { event = JSON.parse(raw.toString('utf8')); } catch (_) { throw Object.assign(new Error('Invalid Stripe event JSON'), { status: 400 }); }
   const firstSeen = await recordBillingEvent(event);
   if (!firstSeen) return send(res, 200, { received: true, duplicate: true });
-  const object = event.data && event.data.object;
-  if (event.type === 'checkout.session.completed') await handleCheckoutCompleted(object);
-  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') await handleSubscription(object);
-  if (event.type === 'invoice.payment_succeeded') await handleInvoice(object, 'active');
-  if (event.type === 'invoice.payment_failed') await handleInvoice(object, 'past_due');
+  try {
+    await processStripeEvent(event);
+  } catch (error) {
+    await releaseBillingEvent(event.id);
+    throw error;
+  }
   send(res, 200, { received: true });
 }
 function staticPath(pathname) {
@@ -364,24 +570,34 @@ function requireGoal(input) {
   if (!goal || goal.length < 8) throw Object.assign(new Error('Product description must be at least 8 characters'), { status: 400 });
 }
 async function generateHandler(req, res, type) {
+  const startedAt = Date.now();
   const { user } = await verifyUser(req);
   const entitlement = await requireEntitlement(user);
   const body = await readJson(req);
   const input = type === 'system' ? inputForSystem(body) : inputForSchema(body);
+  const title = titleFromInput(type, body);
   requireGoal(input);
   const result = await callDeepSeek({ mode: type, input });
-  const saved = await saveSpec(user.id, type, titleFromInput(type, body), input, result, entitlement.source);
+  let saved;
+  try {
+    saved = await saveSpec(user.id, type, title, input, result, entitlement.source);
+  } catch (error) {
+    if (![500, 502, 503, 504].includes(Number(error.status || 0))) throw error;
+    logServerError('Generated SPEX save fallback', error);
+    const profile = await getProfile(user).catch(() => entitlement.profile);
+    return send(res, 200, { saved: false, spec: { id: null, type, title, input, output: result.output, model: result.model, request_id: result.requestId, unsaved: true }, timing_ms: Date.now() - startedAt, entitlement: { source: entitlement.source, profile, access: accessState(profile) } });
+  }
   const profile = await getProfile(user);
-  send(res, 200, { spec: saved, entitlement: { source: entitlement.source, profile } });
+  send(res, 200, { saved: true, spec: saved, timing_ms: Date.now() - startedAt, entitlement: { source: entitlement.source, profile, access: accessState(profile) } });
 }
 async function listSpecs(req, res) {
   const { user } = await verifyUser(req);
-  const rows = await supabaseRest(`/specs?user_id=eq.${encodeURIComponent(user.id)}&select=id,type,title,created_at,updated_at,model&order=created_at.desc`, { method: 'GET' });
+  const rows = await supabaseRest(`/specs?user_id=eq.${encodeURIComponent(user.id)}&select=id,type,title,created_at,updated_at,model&order=created_at.desc`, { method: 'GET', retries: ACCOUNT_RETRY_ATTEMPTS });
   send(res, 200, { specs: rows });
 }
 async function getSpec(req, res, id) {
   const { user } = await verifyUser(req);
-  const rows = await supabaseRest(`/specs?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`, { method: 'GET' });
+  const rows = await supabaseRest(`/specs?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}&select=*`, { method: 'GET', retries: ACCOUNT_RETRY_ATTEMPTS });
   const spec = Array.isArray(rows) ? rows[0] : null;
   if (!spec) return send(res, 404, { error: 'SPEX not found' });
   send(res, 200, { spec });
@@ -403,8 +619,8 @@ async function deleteSpec(req, res, id) {
 }
 async function meHandler(req, res) {
   const { user } = await verifyUser(req);
-  const profile = await getProfile(user);
-  send(res, 200, { user: { id: user.id, email: user.email }, profile, subscription_active: isSubscriptionActive(profile) });
+  const profile = await refreshBillingProfile(await getProfile(user));
+  send(res, 200, { user: { id: user.id, email: user.email }, profile, subscription_active: isSubscriptionActive(profile), access: accessState(profile) });
 }
 async function checkoutHandler(req, res) {
   const { user } = await verifyUser(req);
@@ -415,11 +631,24 @@ async function checkoutHandler(req, res) {
   const session = await createCheckoutSession(user, profile, plan);
   send(res, 200, { url: session.url });
 }
+async function confirmCheckoutHandler(req, res) {
+  const { user } = await verifyUser(req);
+  const body = await readJson(req);
+  const sessionId = safeString(body.session_id, 120);
+  if (!/^cs_/.test(sessionId)) throw appError('Invalid checkout session', 400, 'invalid_checkout_session', 'Checkout could not be verified yet.');
+  const session = await retrieveCheckoutSession(sessionId);
+  const owner = stripeMetadataUserId(session);
+  if (owner !== user.id) throw appError('Checkout session account mismatch', 403, 'checkout_account_mismatch', 'Checkout could not be verified for this account.');
+  if (session.status && session.status !== 'complete' && session.payment_status !== 'paid') return send(res, 202, { pending: true, message: 'Checkout is still processing.' });
+  await handleCheckoutCompleted(session);
+  const profile = await refreshBillingProfile(await getProfile(user));
+  send(res, 200, { confirmed: true, profile, access: accessState(profile) });
+}
 async function portalHandler(req, res) {
   const { user } = await verifyUser(req);
-  const profile = await getProfile(user);
-  const session = await createPortalSession(profile);
-  send(res, 200, { url: session.url });
+  const profile = await refreshBillingProfile(await getProfile(user));
+  const session = await createBillingEntrySession(user, profile);
+  send(res, 200, session);
 }
 async function route(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -429,6 +658,7 @@ async function route(req, res) {
   if (req.method === 'GET' && pathname === '/api/me') return meHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/billing/checkout') return checkoutHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/billing/portal') return portalHandler(req, res);
+  if (req.method === 'POST' && pathname === '/api/billing/confirm') return confirmCheckoutHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/generate/system') return generateHandler(req, res, 'system');
   if (req.method === 'POST' && pathname === '/api/generate/schema') return generateHandler(req, res, 'schema');
   if (req.method === 'GET' && pathname === '/api/specs') return listSpecs(req, res);
@@ -444,15 +674,14 @@ writePublicEnv();
 const server = http.createServer(async (req, res) => {
   try { await route(req, res); } catch (error) {
     const status = error.status || 500;
-    if (status >= 500) console.error(error);
-    const payload = { error: error.message || 'Server error' };
-    if (error.code) payload.code = error.code;
-    if (status === 402) payload.plans = { single: publicEnv.PRICE_SINGLE_DISPLAY, monthly: publicEnv.PRICE_MONTHLY_DISPLAY };
-    send(res, status, payload);
+    if (status >= 500) logServerError('Request failed', error);
+    send(res, status, publicErrorPayload(error, status));
   }
 });
+server.requestTimeout = SERVER_REQUEST_TIMEOUT_MS;
+server.headersTimeout = SERVER_REQUEST_TIMEOUT_MS + 5000;
 if (require.main === module) {
   const port = Number(process.env.PORT || 3000);
   server.listen(port, () => console.log(`${publicEnv.APP_NAME} listening on ${port}`));
 }
-module.exports = { server, configStatus, verifyStripeSignature };
+module.exports = { server, configStatus, verifyStripeSignature, accessState };

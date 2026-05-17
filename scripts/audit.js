@@ -13,7 +13,8 @@ const requiredFiles = [
   'public/app.html',
   'public/app.js',
   'public/styles.css',
-  'scripts/smoke-test.js'
+  'scripts/smoke-test.js',
+  'scripts/full-path-test.js'
 ];
 
 const checks = [];
@@ -34,10 +35,21 @@ const styles = read('public/styles.css');
 const packageJson = read('package.json');
 const html = ['public/index.html', 'public/login.html', 'public/app.html'].map(read).join('\n');
 const publicSource = ['public/index.html', 'public/login.html', 'public/app.html', 'public/app.js', 'public/styles.css'].map(read).join('\n');
+const projectSource = requiredFiles.map((file) => fs.existsSync(path.join(root, file)) ? read(file) : '').join('\n');
 
 if (/holy-divine-saas/i.test(packageJson)) fail('package name is product-safe', 'old package name found'); else pass('package name is product-safe');
 if (/tailwindcss|cdn\.tailwindcss/i.test(html)) fail('no Tailwind CDN', 'Tailwind CDN found'); else pass('no Tailwind CDN');
 if (/localStorage|sessionStorage/.test(publicSource)) fail('no browser storage persistence', 'browser storage persistence found'); else pass('no browser storage persistence');
+
+const chars = (...codes) => codes.map((code) => String.fromCharCode(code)).join('');
+const personalMarkers = [
+  new RegExp(chars(115, 99, 111, 116, 116), 'i'),
+  new RegExp(`p\\s*${chars(115, 99, 111, 116, 116)}`, 'i'),
+  new RegExp(chars(98, 101, 110, 100, 101, 114), 'i'),
+  new RegExp(`${chars(103, 109, 97, 105, 108)}\\.com`, 'i')
+];
+const foundPersonalMarkers = personalMarkers.filter((pattern) => pattern.test(projectSource)).map(String);
+if (foundPersonalMarkers.length) fail('no personal owner identifiers', foundPersonalMarkers.join(', ')); else pass('no personal owner identifiers');
 
 const blockedMarkers = [/\bTO\s*DO\b/i, /\bSTUB\b/i, /\bMOCK\b/i, /\bSIMULATION\b/i];
 const foundMarkers = blockedMarkers.filter((pattern) => pattern.test(server + publicSource)).map(String);
@@ -69,9 +81,15 @@ const appChecks = [
   ['one required product field', /id="goal_description"[\s\S]*required/],
   ['single generation endpoint from app', /\/api\/generate\/system/],
   ['no schema tabs in app', !/tool-tabs|data-mode|schema-fields|system-fields/.test(appHtml + appJs)],
-  ['real checkout buttons wired', /startCheckout\('single'\)/.test(appJs) && /startCheckout\('monthly'\)/.test(appJs)],
+  ['real checkout buttons wired', /startCheckout\('single'/.test(appJs) && /startCheckout\('monthly'/.test(appJs)],
   ['saved SPEX wired', /\/api\/specs/.test(appJs) && /loadSpec/.test(appJs)],
-  ['mobile styles present', /@media \(max-width: 760px\)/.test(styles) && /grid-template-columns: 1fr/.test(styles)]
+  ['mobile styles present', /@media \(max-width: 720px\)/.test(styles) && /grid-template-columns: 1fr/.test(styles)],
+  ['billing modal wired', /billing-modal/.test(appHtml) && /showBillingModal/.test(appJs)],
+  ['truthful access labels', /paid[\s\S]*trial[\s\S]*credit[\s\S]*past_due[\s\S]*expired/.test(appJs)],
+  ['customer action fallbacks', /safeRun[\s\S]*safeRedirect[\s\S]*Clipboard unavailable/.test(appJs)],
+  ['checkout return recovery', /recoverCheckoutReturn[\s\S]*\/api\/billing\/confirm/.test(appJs)],
+  ['unsaved generation fallback shown', /data\.saved === false[\s\S]*Download or copy/.test(appJs)],
+  ['login errors sanitized', /cleanAuthMessage[\s\S]*Email or password is incorrect/.test(html)]
 ];
 for (const [name, condition] of appChecks) {
   if (condition === true || condition instanceof RegExp && condition.test(appHtml + appJs + styles)) pass(name);
@@ -92,7 +110,16 @@ const serverChecks = [
   ['No old meta tag', !/holy_divine_struct_v3\.4/.test(server)],
   ['Entitlement enforcement', /Payment required/],
   ['Saved specs routes', /\/api\/specs/],
-  ['Static traversal guard', /allowedRoot/]
+  ['Static traversal guard', /allowedRoot/],
+  ['Billing portal fallback', /createBillingEntrySession[\s\S]*mode: 'checkout'/],
+  ['Checkout confirm recovery route', /confirmCheckoutHandler[\s\S]*\/api\/billing\/confirm/],
+  ['Stripe idempotency keys', /Idempotency-Key[\s\S]*stripeIdempotencyKey/],
+  ['Billing status self-heal', /refreshBillingProfile[\s\S]*retrieveSubscription/],
+  ['Webhook retry release', /releaseBillingEvent[\s\S]*billing_events/],
+  ['Transient outbound retry', /retryAttemptsForService[\s\S]*isRetryableError/],
+  ['Public error sanitization', /publicErrorPayload[\s\S]*Something went wrong/],
+  ['Server request timeouts', /requestTimeout[\s\S]*SERVER_REQUEST_TIMEOUT_MS/],
+  ['Server log redaction', /redactLog[\s\S]*redacted-email[\s\S]*redacted-stripe-key/]
 ];
 for (const [name, condition] of serverChecks) {
   if (condition === true || condition instanceof RegExp && condition.test(server)) pass(name);
@@ -107,6 +134,7 @@ const sqlChecks = [
   ['RLS specs', /alter table public\.specs enable row level security/],
   ['auth trigger', /on_auth_user_created/],
   ['grant credits RPC', /function public\.grant_spec_credits/],
+  ['idempotent checkout credit RPC', /function public\.grant_spec_credit_once/],
   ['atomic credit save RPC', /function public\.save_spec_with_credit/],
   ['billing idempotency RPC', /function public\.record_billing_event_once/],
   ['service role grants', /grant execute[\s\S]*to service_role/]

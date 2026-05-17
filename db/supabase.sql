@@ -142,6 +142,44 @@ begin
 end;
 $$;
 
+create or replace function public.grant_spec_credit_once(
+  target_user uuid,
+  credit_count integer,
+  source_id text,
+  source_type text,
+  source_payload jsonb
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if credit_count <= 0 then
+    raise exception 'credit_count must be positive';
+  end if;
+
+  if source_id is null or btrim(source_id) = '' then
+    raise exception 'source_id is required';
+  end if;
+
+  insert into public.billing_events (id, event_type, payload)
+  values (source_id, coalesce(nullif(source_type, ''), 'checkout.credit'), coalesce(source_payload, '{}'::jsonb))
+  on conflict (id) do nothing;
+
+  if not found then
+    return false;
+  end if;
+
+  insert into public.profiles (id, single_spec_credits)
+  values (target_user, credit_count)
+  on conflict (id) do update
+    set single_spec_credits = public.profiles.single_spec_credits + excluded.single_spec_credits,
+        updated_at = now();
+  return true;
+end;
+$$;
+
 create or replace function public.consume_spec_credit(target_user uuid)
 returns boolean
 language plpgsql
@@ -212,11 +250,13 @@ end;
 $$;
 
 revoke all on function public.grant_spec_credits(uuid, integer) from public, anon, authenticated;
+revoke all on function public.grant_spec_credit_once(uuid, integer, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.consume_spec_credit(uuid) from public, anon, authenticated;
 revoke all on function public.save_spec_with_credit(uuid, text, text, jsonb, jsonb, text, text) from public, anon, authenticated;
 revoke all on function public.record_billing_event_once(text, text, jsonb) from public, anon, authenticated;
 
 grant execute on function public.grant_spec_credits(uuid, integer) to service_role;
+grant execute on function public.grant_spec_credit_once(uuid, integer, text, text, jsonb) to service_role;
 grant execute on function public.consume_spec_credit(uuid) to service_role;
 grant execute on function public.save_spec_with_credit(uuid, text, text, jsonb, jsonb, text, text) to service_role;
 grant execute on function public.record_billing_event_once(text, text, jsonb) to service_role;
@@ -228,9 +268,11 @@ revoke all on function public.set_updated_at() from public, anon, authenticated;
 revoke all on function public.record_billing_event_once(text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.save_spec_with_credit(uuid, text, text, jsonb, jsonb, text, text) from public, anon, authenticated;
 revoke all on function public.grant_spec_credits(uuid, integer) from public, anon, authenticated;
+revoke all on function public.grant_spec_credit_once(uuid, integer, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.consume_spec_credit(uuid) from public, anon, authenticated;
 
 grant execute on function public.record_billing_event_once(text, text, jsonb) to service_role;
 grant execute on function public.save_spec_with_credit(uuid, text, text, jsonb, jsonb, text, text) to service_role;
 grant execute on function public.grant_spec_credits(uuid, integer) to service_role;
+grant execute on function public.grant_spec_credit_once(uuid, integer, text, text, jsonb) to service_role;
 grant execute on function public.consume_spec_credit(uuid) to service_role;
