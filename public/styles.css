@@ -177,6 +177,33 @@ textarea#goal_description { flex: 1; min-height: 42vh; resize: vertical; }
   align-items: center;
   gap: 12px;
 }
+.progress-panel { border-color: rgba(0,240,255,.18); }
+.progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, rgba(0,240,255,.35), var(--accent), #ffffff);
+  box-shadow: 0 0 22px var(--accent-glow);
+  transition: width .75s cubic-bezier(.16,1,.3,1);
+}
+.progress-step {
+  color: var(--text-primary);
+  font-size: .94rem;
+  margin-bottom: 6px;
+}
+.progress-elapsed {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .76rem;
+}
 .output-container { display: flex; flex-direction: column; gap: 16px; }
 .output-data, .output-box {
   background: rgba(0,0,0,.2);
