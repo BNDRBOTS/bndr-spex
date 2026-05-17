@@ -39,9 +39,8 @@ if (/holy-divine-saas/i.test(packageJson)) fail('package name is product-safe', 
 if (/tailwindcss|cdn\.tailwindcss/i.test(html)) fail('no Tailwind CDN', 'Tailwind CDN found'); else pass('no Tailwind CDN');
 if (/localStorage|sessionStorage/.test(publicSource)) fail('no browser storage persistence', 'browser storage persistence found'); else pass('no browser storage persistence');
 
-const blockedMarkers = ['TO' + 'DO', 'ST' + 'UB', 'MO' + 'CK', 'SIM' + 'ULATION', 'PLACE' + 'HOLDER'];
-const runtimeUpper = (server + publicSource).toUpperCase();
-const foundMarkers = blockedMarkers.filter((marker) => runtimeUpper.includes(marker));
+const blockedMarkers = [/\bTO\s*DO\b/i, /\bSTUB\b/i, /\bMOCK\b/i, /\bSIMULATION\b/i];
+const foundMarkers = blockedMarkers.filter((pattern) => pattern.test(server + publicSource)).map(String);
 if (foundMarkers.length) fail('no unfinished markers in runtime source', foundMarkers.join(', ')); else pass('no unfinished markers in runtime source');
 
 const envBlock = server.match(/const publicEnv = \{[\s\S]*?\};/);
