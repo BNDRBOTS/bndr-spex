@@ -4,7 +4,6 @@ const env = window.HD_ENV || {};
 const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co', env.SUPABASE_ANON_KEY || 'missing');
 
 let session = null;
-let mode = 'system';
 let currentOutput = null;
 let selectedSpecId = null;
 
@@ -20,10 +19,8 @@ const els = {
   refresh: $('refresh'),
   specList: $('spec-list'),
   form: $('generate-form'),
-  modeEyebrow: $('mode-eyebrow'),
-  modeTitle: $('mode-title'),
-  systemFields: $('system-fields'),
-  schemaFields: $('schema-fields'),
+  goal: $('goal_description'),
+  generateButton: $('generate-button'),
   output: $('output'),
   outputTitle: $('output-title'),
   copyOutput: $('copy-output'),
@@ -52,14 +49,14 @@ async function requireSession() {
   if (!session) window.location.href = '/login.html';
 }
 
-async function api(path, options = {}) {
+async function api(route, options = {}) {
   if (!session) await requireSession();
   const headers = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${session.access_token}`,
     ...(options.headers || {})
   };
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(route, { ...options, headers });
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};
   if (!response.ok) {
@@ -80,36 +77,13 @@ function formatDate(value) {
   return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function setMode(nextMode) {
-  mode = nextMode;
-  document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.mode === mode));
-  const isSystem = mode === 'system';
-  els.systemFields.classList.toggle('hidden', !isSystem);
-  els.schemaFields.classList.toggle('hidden', isSystem);
-  els.modeEyebrow.textContent = isSystem ? 'Build-ready spec generator' : 'Structured schema generator';
-  els.modeTitle.textContent = isSystem ? 'Generate a complete build spec.' : 'Generate a reusable schema.';
+function payload() {
+  return { goal_description: els.goal.value.trim() };
 }
 
-function payload() {
-  const goal = $('goal_description').value.trim();
-  if (mode === 'system') {
-    return {
-      goal_description: goal,
-      runtime_model: $('runtime_model').value.trim(),
-      system_scope: $('system_scope').value.trim(),
-      target_platforms: $('target_platforms').value.trim(),
-      constraints: $('constraints').value.trim(),
-      dependencies: $('dependencies').value.trim(),
-      design_requirements: $('design_requirements').value.trim(),
-      data_requirements: $('data_requirements').value.trim()
-    };
-  }
-  return {
-    goal_description: goal,
-    runtime_model: $('schema_runtime_model').value.trim(),
-    constraints: $('schema_constraints').value.trim(),
-    dependencies: $('schema_dependencies').value.trim()
-  };
+function setBusy(isBusy) {
+  els.generateButton.disabled = isBusy;
+  els.generateButton.textContent = isBusy ? 'Generating SPEX...' : 'Generate SPEX';
 }
 
 function renderAccount(data) {
@@ -130,19 +104,20 @@ function renderSpecs(specs) {
   els.specList.innerHTML = '';
   if (!specs.length) {
     const empty = document.createElement('p');
-    empty.className = 'muted';
-    empty.textContent = 'No saved specs yet.';
+    empty.className = 'muted empty-state';
+    empty.textContent = 'No saved SPEX yet.';
     els.specList.appendChild(empty);
     return;
   }
   specs.forEach((spec) => {
     const button = document.createElement('button');
     button.className = 'saved-item';
+    button.type = 'button';
     button.dataset.id = spec.id;
     const title = document.createElement('strong');
-    title.textContent = spec.title || 'Untitled spec';
+    title.textContent = spec.title || 'Untitled SPEX';
     const meta = document.createElement('span');
-    meta.textContent = `${spec.type} · ${formatDate(spec.created_at)}`;
+    meta.textContent = `${spec.type || 'SPEX'} · ${formatDate(spec.created_at)}`;
     button.append(title, meta);
     button.addEventListener('click', () => loadSpec(spec.id));
     els.specList.appendChild(button);
@@ -158,7 +133,7 @@ async function loadSpec(id) {
   const data = await api(`/api/specs/${id}`, { method: 'GET' });
   const spec = data.spec;
   selectedSpecId = spec.id;
-  els.detailTitle.textContent = spec.title || 'Untitled spec';
+  els.detailTitle.textContent = spec.title || 'Untitled SPEX';
   els.renameInput.value = spec.title || '';
   els.renameWrap.classList.remove('hidden');
   els.deleteSpec.classList.remove('hidden');
@@ -167,14 +142,19 @@ async function loadSpec(id) {
 
 async function generate(event) {
   event.preventDefault();
-  const endpoint = mode === 'system' ? '/api/generate/system' : '/api/generate/schema';
-  els.outputTitle.textContent = 'Generating...';
+  const body = payload();
+  if (!body.goal_description || body.goal_description.length < 8) {
+    toast('Product description must be at least 8 characters.');
+    return;
+  }
+  setBusy(true);
+  els.outputTitle.textContent = 'Generating SPEX...';
   els.output.textContent = '';
   currentOutput = null;
   try {
-    const data = await api(endpoint, { method: 'POST', body: JSON.stringify(payload()) });
+    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body) });
     currentOutput = data.spec.output;
-    els.outputTitle.textContent = data.spec.title || 'Generated output';
+    els.outputTitle.textContent = data.spec.title || 'Generated SPEX';
     els.output.textContent = pretty(currentOutput);
     toast('Generated and saved.');
     await loadAccount();
@@ -182,11 +162,13 @@ async function generate(event) {
   } catch (error) {
     if (error.status === 402) {
       els.outputTitle.textContent = 'Payment required';
-      els.output.textContent = 'Buy one generation credit or start the monthly subscription to generate.';
+      els.output.textContent = 'Buy one SPEX or subscribe monthly to generate.';
     } else {
       els.outputTitle.textContent = 'Generation failed';
       els.output.textContent = error.message;
     }
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -214,7 +196,7 @@ async function deleteSelected() {
   if (!selectedSpecId) return;
   await api(`/api/specs/${selectedSpecId}`, { method: 'DELETE' });
   selectedSpecId = null;
-  els.detailTitle.textContent = 'Select a saved spec';
+  els.detailTitle.textContent = 'Select a saved SPEX';
   els.detailOutput.textContent = '';
   els.renameWrap.classList.add('hidden');
   els.deleteSpec.classList.add('hidden');
@@ -223,30 +205,29 @@ async function deleteSelected() {
 }
 
 function downloadCurrent() {
-  if (!currentOutput) return toast('No generated output to download.');
+  if (!currentOutput) return toast('No generated SPEX to download.');
   const blob = new Blob([pretty(currentOutput)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = `${mode}-spec-${Date.now()}.json`;
+  link.download = `bndr-spex-${Date.now()}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
 
 async function copyCurrent() {
-  if (!currentOutput) return toast('No generated output to copy.');
+  if (!currentOutput) return toast('No generated SPEX to copy.');
   await navigator.clipboard.writeText(pretty(currentOutput));
   toast('Copied.');
 }
 
 function applyPriceLabels() {
-  els.buySingle.textContent = `Buy one spec · ${env.PRICE_SINGLE_DISPLAY || '$7'}`;
-  els.buyMonthly.textContent = `Subscribe · ${env.PRICE_MONTHLY_DISPLAY || '$9/mo'}`;
+  els.buySingle.textContent = `Buy one SPEX · ${env.PRICE_SINGLE_DISPLAY || '$7'}`;
+  els.buyMonthly.textContent = `Subscribe monthly · ${env.PRICE_MONTHLY_DISPLAY || '$9/mo'}`;
 }
 
 async function init() {
   applyPriceLabels();
   await requireSession();
-  document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
   els.form.addEventListener('submit', generate);
   els.buySingle.addEventListener('click', () => startCheckout('single'));
   els.buyMonthly.addEventListener('click', () => startCheckout('monthly'));
@@ -257,7 +238,6 @@ async function init() {
   els.copyOutput.addEventListener('click', copyCurrent);
   els.downloadOutput.addEventListener('click', downloadCurrent);
   els.signout.addEventListener('click', async () => { await supabase.auth.signOut(); window.location.href = '/login.html'; });
-  setMode('system');
   await loadAccount();
   await loadSpecs();
 }
