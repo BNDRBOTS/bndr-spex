@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="BNDR | SPEX converts product ideas into structured schemas and complete implementation-grade technical specifications.">
+  <title>BNDR | SPEX</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">BNDR<span>SPEX</span></a>
+    <nav class="nav">
+      <a href="#product">Product</a>
+      <a href="#pricing">Pricing</a>
+      <a class="button button-small" href="/login.html">Launch App</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Product specs that are ready to build</p>
+        <h1>Turn a rough idea into a clean build spec.</h1>
+        <p class="hero-text">BNDR | SPEX turns a product idea into a structured technical brief, implementation map, or reusable schema you can hand to an AI builder, developer, or client.</p>
+        <div class="hero-actions">
+          <a class="button" href="/login.html">Start generating</a>
+          <a class="button button-secondary" href="#pricing">View pricing</a>
+        </div>
+      </div>
+      <div class="hero-panel" aria-label="Product output preview">
+        <div class="panel-bar"><span></span><span></span><span></span></div>
+        <h2>What you get</h2>
+        <ul class="spec-list">
+          <li>System overview</li>
+          <li>Architecture specification</li>
+          <li>Module definitions</li>
+          <li>API layer</li>
+          <li>Data flow</li>
+          <li>State management</li>
+          <li>Integration points</li>
+          <li>Deployment strategy</li>
+          <li>Validation logic</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="product" class="section split">
+      <div>
+        <p class="eyebrow">Two useful outputs</p>
+        <h2>Build-ready specs and reusable schemas in one workspace.</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="card">
+          <h3>Full System Spec</h3>
+          <p>Transforms a high-level idea into an end-to-end technical specification with architecture, APIs, modules, data flow, validation logic, deployment, and integration layers.</p>
+        </article>
+        <article class="card">
+          <h3>Structured Schema</h3>
+          <p>Converts plain-language goals into structured schema output with clear fields, validation notes, and reusable formatting.</p>
+        </article>
+        <article class="card">
+          <h3>Private by design</h3>
+          <p>Generation runs through protected server routes. Account access, payment handling, and private system instructions stay behind the app.</p>
+        </article>
+        <article class="card">
+          <h3>Saved workspace</h3>
+          <p>Every generated spec can be saved, reopened, copied, downloaded, renamed, or deleted from your account.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section pricing-section">
+      <p class="eyebrow">Simple access</p>
+      <h2>Start with one spec or keep generating monthly.</h2>
+      <div class="pricing-grid">
+        <article class="pricing-card">
+          <h3>Single Spec</h3>
+          <p class="price" data-single-price>$7</p>
+          <p>One paid generation credit for a single project spec or schema output.</p>
+          <a class="button button-full" href="/login.html">Buy credit</a>
+        </article>
+        <article class="pricing-card featured">
+          <h3>Monthly Access</h3>
+          <p class="price" data-monthly-price>$9/mo</p>
+          <p>Monthly access for ongoing specs, schemas, and saved outputs.</p>
+          <a class="button button-full" href="/login.html">Subscribe</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© 2026 BNDR LLC. BNDR | SPEX.</p>
+  </footer>
+  <script src="/env.js"></script>
+  <script>
+    if (window.HD_ENV) {
+      document.querySelectorAll('[data-single-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_SINGLE_DISPLAY);
+      document.querySelectorAll('[data-monthly-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_MONTHLY_DISPLAY);
+    }
+  </script>
+</body>
+</html>

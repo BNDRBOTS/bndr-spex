@@ -1,0 +1,1 @@
+window.HD_ENV = {"SUPABASE_URL":"https://example.supabase.co","SUPABASE_ANON_KEY":"anon-public-key","PRICE_SINGLE_DISPLAY":"$7","PRICE_MONTHLY_DISPLAY":"$9/mo","APP_NAME":"BNDR | SPEX"};
