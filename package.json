@@ -1,0 +1,17 @@
+{
+  "name": "holy-divine-saas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready Railway SaaS for BNDR | SPEX system-spec and schema generation.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check scripts/smoke-test.js && node --check scripts/audit.js",
+    "audit:project": "node scripts/audit.js",
+    "test:smoke": "node scripts/smoke-test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

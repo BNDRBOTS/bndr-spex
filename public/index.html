@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="BNDR | SPEX converts product ideas into structured schemas and complete implementation-grade technical specifications.">
+  <title>BNDR | SPEX</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">BNDR<span>SPEX</span></a>
+    <nav class="nav">
+      <a href="#product">Product</a>
+      <a href="#pricing">Pricing</a>
+      <a class="button button-small" href="/login.html">Launch App</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Schema discipline for monetizable systems</p>
+        <h1>Turn raw product intent into protected, reusable specifications.</h1>
+        <p class="hero-text">A paid SaaS interface for generating complete system specifications and HOLY DIVINE JSON-L schemas. Users authenticate, pay through Stripe, generate outputs through server-side AI, and save every result to their account.</p>
+        <div class="hero-actions">
+          <a class="button" href="/login.html">Start generating</a>
+          <a class="button button-secondary" href="#pricing">View pricing</a>
+        </div>
+      </div>
+      <div class="hero-panel" aria-label="Product output preview">
+        <div class="panel-bar"><span></span><span></span><span></span></div>
+        <h2>Generated structure</h2>
+        <ul class="spec-list">
+          <li>System overview</li>
+          <li>Architecture specification</li>
+          <li>Module definitions</li>
+          <li>API layer</li>
+          <li>Data flow</li>
+          <li>State management</li>
+          <li>Integration points</li>
+          <li>Deployment strategy</li>
+          <li>Validation logic</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="product" class="section split">
+      <div>
+        <p class="eyebrow">Two production tools</p>
+        <h2>System specs and schema output in one account.</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="card">
+          <h3>Full System Spec</h3>
+          <p>Transforms a high-level idea into an end-to-end technical specification with architecture, APIs, modules, data flow, validation logic, deployment, and integration layers.</p>
+        </article>
+        <article class="card">
+          <h3>HOLY DIVINE Schema</h3>
+          <p>Converts plain-language goals into modular JSON-L compatible schemas with instruction, dynamic input, output fields, validation flags, and a prompt-safe final instruction.</p>
+        </article>
+        <article class="card">
+          <h3>Protected Server Logic</h3>
+          <p>The proprietary generation contract stays server-side. The browser never receives the AI prompts, DeepSeek key, Supabase service role key, Stripe secret, or webhook secret.</p>
+        </article>
+        <article class="card">
+          <h3>Saved Spec Vault</h3>
+          <p>Every successful generation is written to a remote Supabase database under the authenticated user account with row-level security policies.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section pricing-section">
+      <p class="eyebrow">Stripe-backed monetization</p>
+      <h2>Sell one-off outputs or monthly access.</h2>
+      <div class="pricing-grid">
+        <article class="pricing-card">
+          <h3>One Specification</h3>
+          <p class="price" data-single-price>$7</p>
+          <p>One paid generation credit. Good for single project specs or one schema export.</p>
+          <a class="button button-full" href="/login.html">Buy credit</a>
+        </article>
+        <article class="pricing-card featured">
+          <h3>Monthly Access</h3>
+          <p class="price" data-monthly-price>$9/mo</p>
+          <p>Subscription entitlement for repeated generation while the Stripe subscription is active.</p>
+          <a class="button button-full" href="/login.html">Subscribe</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© 2026 BNDR LLC. BNDR | SPEX.</p>
+  </footer>
+  <script src="/env.js"></script>
+  <script>
+    if (window.HD_ENV) {
+      document.querySelectorAll('[data-single-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_SINGLE_DISPLAY);
+      document.querySelectorAll('[data-monthly-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_MONTHLY_DISPLAY);
+    }
+  </script>
+</body>
+</html>
