@@ -6,6 +6,7 @@ const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co',
 let session = null;
 let currentOutput = null;
 let selectedSpecId = null;
+let progressTimer = null;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -37,69 +38,81 @@ function toast(message) {
   els.toast.textContent = message;
   els.toast.classList.add('visible');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => els.toast.classList.remove('visible'), 3200);
+  toast.timer = setTimeout(() => els.toast.classList.remove('visible'), 4200);
 }
+function showStatus(title, message) {
+  els.outputTitle.textContent = title;
+  els.output.textContent = message;
+  toast(title);
+}
+function beginProgress() {
+  const started = Date.now();
+  clearInterval(progressTimer);
+  progressTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    els.outputTitle.textContent = `Generating SPEX... ${seconds}s`;
+    els.output.textContent = 'DeepSeek reasoning is running. This should finish or fail visibly within about 2 minutes.';
+  }, 1000);
+}
+function endProgress() { clearInterval(progressTimer); progressTimer = null; }
 
 async function requireSession() {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
-    throw new Error('Sign-in is not connected yet. Contact support.');
-  }
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) throw new Error('Sign-in is not connected.');
   const result = await supabase.auth.getSession();
   session = result.data.session;
   if (!session) window.location.href = '/login.html';
 }
-
 async function api(route, options = {}) {
   if (!session) await requireSession();
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${session.access_token}`,
-    ...(options.headers || {})
-  };
-  const response = await fetch(route, { ...options, headers });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    const error = new Error(data.error || `Request failed: ${response.status}`);
-    error.status = response.status;
-    error.data = data;
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs || 45000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}`, ...(options.headers || {}) };
+    const response = await fetch(route, { ...options, headers, signal: controller.signal });
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text || `Request failed: ${response.status}` }; }
+    if (!response.ok) {
+      const error = new Error(data.error || `Request failed: ${response.status}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeout = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+      timeout.status = 504;
+      throw timeout;
+    }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
-function pretty(value) {
-  return JSON.stringify(value, null, 2);
-}
-
-function formatDate(value) {
-  if (!value) return '';
-  return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-function payload() {
-  return { goal_description: els.goal.value.trim() };
-}
-
+function pretty(value) { return JSON.stringify(value, null, 2); }
+function formatDate(value) { return value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''; }
+function payload() { return { goal_description: els.goal.value.trim() }; }
 function setBusy(isBusy) {
   els.generateButton.disabled = isBusy;
   els.generateButton.textContent = isBusy ? 'Generating SPEX...' : 'Generate SPEX';
 }
-
+function setButtonBusy(button, isBusy, text) {
+  if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+  button.disabled = isBusy;
+  button.textContent = isBusy ? text : button.dataset.originalText;
+}
 function renderAccount(data) {
   const profile = data.profile || {};
-  els.accountLabel.textContent = data.user && data.user.email ? data.user.email : '';
+  els.accountLabel.textContent = data.user && data.user.email ? data.user.email : 'Account';
   const active = Boolean(data.subscription_active);
   const credits = Number(profile.single_spec_credits || 0);
   els.planStatus.textContent = active ? 'Subscription active' : credits > 0 ? 'Generation credit available' : 'Payment required';
   els.creditStatus.textContent = active ? `Plan status: ${profile.subscription_status || 'active'}` : `${credits} generation credit${credits === 1 ? '' : 's'} available`;
 }
-
-async function loadAccount() {
-  const data = await api('/api/me', { method: 'GET' });
-  renderAccount(data);
-}
-
+async function loadAccount() { renderAccount(await api('/api/me', { method: 'GET' })); }
 function renderSpecs(specs) {
   els.specList.innerHTML = '';
   if (!specs.length) {
@@ -123,15 +136,9 @@ function renderSpecs(specs) {
     els.specList.appendChild(button);
   });
 }
-
-async function loadSpecs() {
-  const data = await api('/api/specs', { method: 'GET' });
-  renderSpecs(data.specs || []);
-}
-
+async function loadSpecs() { renderSpecs((await api('/api/specs', { method: 'GET' })).specs || []); }
 async function loadSpec(id) {
-  const data = await api(`/api/specs/${id}`, { method: 'GET' });
-  const spec = data.spec;
+  const spec = (await api(`/api/specs/${id}`, { method: 'GET' })).spec;
   selectedSpecId = spec.id;
   els.detailTitle.textContent = spec.title || 'Untitled SPEX';
   els.renameInput.value = spec.title || '';
@@ -139,49 +146,52 @@ async function loadSpec(id) {
   els.deleteSpec.classList.remove('hidden');
   els.detailOutput.textContent = pretty(spec.output || spec.content || spec);
 }
-
 async function generate(event) {
   event.preventDefault();
   const body = payload();
-  if (!body.goal_description || body.goal_description.length < 8) {
-    toast('Product description must be at least 8 characters.');
-    return;
-  }
+  if (!body.goal_description || body.goal_description.length < 8) return toast('Product description must be at least 8 characters.');
   setBusy(true);
-  els.outputTitle.textContent = 'Generating SPEX...';
-  els.output.textContent = '';
+  beginProgress();
   currentOutput = null;
   try {
-    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body) });
+    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body), timeoutMs: 130000 });
     currentOutput = data.spec.output;
-    els.outputTitle.textContent = data.spec.title || 'Generated SPEX';
+    els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || 'Generated SPEX';
     els.output.textContent = pretty(currentOutput);
     toast('Generated and saved.');
     await loadAccount();
     await loadSpecs();
   } catch (error) {
-    if (error.status === 402) {
-      els.outputTitle.textContent = 'Payment required';
-      els.output.textContent = 'Buy one SPEX or subscribe monthly to generate.';
-    } else {
-      els.outputTitle.textContent = 'Generation failed';
-      els.output.textContent = error.message;
-    }
+    if (error.status === 402) showStatus('Payment required', 'Buy one SPEX or subscribe monthly to generate.');
+    else if (error.status === 504) showStatus('Generation timed out', `${error.message} Try a shorter product description or run it again.`);
+    else showStatus('Generation failed', error.message);
   } finally {
+    endProgress();
     setBusy(false);
   }
 }
-
-async function startCheckout(plan) {
-  const data = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
-  window.location.href = data.url;
+async function startCheckout(plan, button) {
+  setButtonBusy(button, true, 'Opening checkout...');
+  try {
+    const data = await api('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }), timeoutMs: 30000 });
+    if (!data.url) throw new Error('Stripe checkout did not return a URL.');
+    window.location.href = data.url;
+  } catch (error) {
+    showStatus('Checkout failed', error.message);
+    setButtonBusy(button, false);
+  }
 }
-
 async function openPortal() {
-  const data = await api('/api/billing/portal', { method: 'POST', body: JSON.stringify({}) });
-  window.location.href = data.url;
+  setButtonBusy(els.portal, true, 'Opening billing...');
+  try {
+    const data = await api('/api/billing/portal', { method: 'POST', body: JSON.stringify({}), timeoutMs: 30000 });
+    if (!data.url) throw new Error('Stripe billing portal did not return a URL.');
+    window.location.href = data.url;
+  } catch (error) {
+    showStatus('Billing failed', error.message);
+    setButtonBusy(els.portal, false);
+  }
 }
-
 async function renameSelected() {
   if (!selectedSpecId) return;
   const title = els.renameInput.value.trim();
@@ -191,7 +201,6 @@ async function renameSelected() {
   await loadSpecs();
   await loadSpec(selectedSpecId);
 }
-
 async function deleteSelected() {
   if (!selectedSpecId) return;
   await api(`/api/specs/${selectedSpecId}`, { method: 'DELETE' });
@@ -203,7 +212,6 @@ async function deleteSelected() {
   toast('Deleted.');
   await loadSpecs();
 }
-
 function downloadCurrent() {
   if (!currentOutput) return toast('No generated SPEX to download.');
   const blob = new Blob([pretty(currentOutput)], { type: 'application/json' });
@@ -213,24 +221,21 @@ function downloadCurrent() {
   link.click();
   URL.revokeObjectURL(link.href);
 }
-
 async function copyCurrent() {
   if (!currentOutput) return toast('No generated SPEX to copy.');
   await navigator.clipboard.writeText(pretty(currentOutput));
   toast('Copied.');
 }
-
 function applyPriceLabels() {
   els.buySingle.textContent = `Buy one SPEX · ${env.PRICE_SINGLE_DISPLAY || '$7'}`;
   els.buyMonthly.textContent = `Subscribe monthly · ${env.PRICE_MONTHLY_DISPLAY || '$9/mo'}`;
 }
-
 async function init() {
   applyPriceLabels();
   await requireSession();
   els.form.addEventListener('submit', generate);
-  els.buySingle.addEventListener('click', () => startCheckout('single'));
-  els.buyMonthly.addEventListener('click', () => startCheckout('monthly'));
+  els.buySingle.addEventListener('click', () => startCheckout('single', els.buySingle));
+  els.buyMonthly.addEventListener('click', () => startCheckout('monthly', els.buyMonthly));
   els.portal.addEventListener('click', openPortal);
   els.refresh.addEventListener('click', async () => { await loadAccount(); await loadSpecs(); toast('Refreshed.'); });
   els.deleteSpec.addEventListener('click', deleteSelected);
@@ -241,8 +246,4 @@ async function init() {
   await loadAccount();
   await loadSpecs();
 }
-
-init().catch((error) => {
-  els.outputTitle.textContent = 'App failed to initialize';
-  els.output.textContent = error.message;
-});
+init().catch((error) => { showStatus('App failed to initialize', error.message); });
