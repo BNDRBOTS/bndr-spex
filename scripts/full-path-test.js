@@ -251,6 +251,10 @@ function authed(options = {}) {
     assert.strictEqual(portal.response.status, 200, 'billing opens with customer');
     assert.strictEqual(portal.body.mode, 'portal', 'customer opens portal');
 
+    const notify = await request(base, '/api/support/notify', authed({ method: 'POST', body: JSON.stringify({ title: 'Generation failed', message: 'Sanitized browser error', path: '/app.html', timestamp: new Date().toISOString() }) }));
+    assert.strictEqual(notify.response.status, 200, 'developer notification endpoint accepts sanitized report');
+    assert.strictEqual(notify.body.notified, true, 'developer notification returns success');
+
     const subscriptionCheckout = { id: 'evt_subscription', type: 'checkout.session.completed', data: { object: { id: 'cs_sub', mode: 'subscription', customer: 'cus_123', subscription: 'sub_123', client_reference_id: user.id, metadata: { user_id: user.id, plan: 'monthly' } } } };
     const webhookSub = await sendWebhook(base, subscriptionCheckout);
     assert.strictEqual(webhookSub.response.status, 200, 'subscription webhook accepted');
@@ -311,7 +315,7 @@ function authed(options = {}) {
     assert.ok(/@media \(max-width: 720px\)/.test(css.text), 'mobile breakpoint present');
     assert.ok(css.text.includes('.modal-actions'), 'billing modal mobile styles present');
 
-    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema save reopen webhook-labels sanitized-errors mobile');
+    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema notify save reopen webhook-labels sanitized-errors mobile');
   } finally {
     await close();
     global.fetch = nativeFetch;

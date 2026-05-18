@@ -11,12 +11,13 @@
     <header class="spex-rail" aria-label="Primary navigation">
       <a class="rail-brand" href="/" aria-label="BNDR SPEX home">S</a>
       <nav class="rail-nav" aria-label="Workspace actions">
-        <span class="rail-item active" title="Generation flow" aria-hidden="true">⌘</span>
+        <button id="rail-generate" class="rail-item active" type="button" title="Generation flow" aria-label="Go to generation flow">⌘</button>
         <button id="refresh" class="rail-item" type="button" title="Refresh saved SPEX">↻</button>
-        <span class="rail-item" title="Billing" aria-hidden="true">◍</span>
+        <button id="rail-billing" class="rail-item" type="button" title="Billing" aria-label="Show billing controls">◍</button>
       </nav>
       <div class="rail-bottom">
-        <span id="account-label" class="rail-account">Account</span>
+        <button id="rail-settings" class="rail-item" type="button" title="Settings and support" aria-label="Open settings and support">⚙</button>
+        <button id="account-label" class="rail-item rail-account-button" type="button" title="Account" aria-label="Open account settings">?</button>
         <button id="signout" class="rail-item" type="button" title="Sign out">↗</button>
       </div>
     </header>
@@ -93,7 +94,7 @@
           </div>
         </section>
 
-        <section class="config-section">
+        <section id="payment-section" class="config-section">
           <span class="section-label">Payment actions</span>
           <div class="payment-actions">
             <button id="portal" class="button button-secondary" type="button">Billing portal</button>
@@ -132,6 +133,29 @@
         <button id="billing-modal-primary" class="button button-lux" type="button">Open billing</button>
         <button id="billing-modal-secondary" class="button button-secondary" type="button">Subscribe monthly</button>
         <button id="billing-modal-close" class="button button-secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="settings-modal">
+      <div class="section-label">Settings</div>
+      <h2 id="settings-modal-title">Account and support</h2>
+      <div class="settings-list">
+        <div>
+          <span class="settings-label">Signed in as</span>
+          <strong id="settings-email">Account</strong>
+        </div>
+        <div>
+          <span class="settings-label">Support</span>
+          <a id="support-email" href="mailto:support@bndrllc.com">support@bndrllc.com</a>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="settings-billing" class="button button-secondary" type="button">Billing</button>
+        <a class="button button-secondary" href="https://bndrllc.com">BNDR LLC</a>
+        <button id="settings-signout" class="button button-secondary" type="button">Sign out</button>
+        <button id="settings-close" class="button button-lux" type="button">Close</button>
       </div>
     </div>
   </div>

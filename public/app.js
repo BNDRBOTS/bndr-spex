@@ -19,6 +19,10 @@ const els = {
   buySingle: $('buy-single'),
   buyMonthly: $('buy-monthly'),
   portal: $('portal'),
+  railGenerate: $('rail-generate'),
+  railBilling: $('rail-billing'),
+  railSettings: $('rail-settings'),
+  paymentSection: $('payment-section'),
   signout: $('signout'),
   refresh: $('refresh'),
   specList: $('spec-list'),
@@ -48,10 +52,17 @@ const els = {
   billingPrimary: $('billing-modal-primary'),
   billingSecondary: $('billing-modal-secondary'),
   billingClose: $('billing-modal-close'),
+  settingsModal: $('settings-modal'),
+  settingsEmail: $('settings-email'),
+  settingsBilling: $('settings-billing'),
+  settingsSignout: $('settings-signout'),
+  settingsClose: $('settings-close'),
   toast: $('toast')
 };
 
 const billingModalActions = { primary: null, secondary: null };
+const supportEmail = 'support@bndrllc.com';
+const userErrorStatuses = new Set([400, 401, 402, 403, 404, 409, 422]);
 
 const outputModes = {
   system: {
@@ -97,16 +108,44 @@ const progressStepsByMode = {
 
 function modeConfig(mode = currentMode) { return outputModes[mode] || outputModes.system; }
 
-function toast(message) {
-  els.toast.textContent = message;
+function isUserError(error) {
+  const status = Number(error && error.status || 0);
+  if (userErrorStatuses.has(status)) return true;
+  if (error && error.name === 'AbortError') return false;
+  return false;
+}
+async function notifyDeveloper(title, message) {
+  try {
+    await api('/api/support/notify', {
+      method: 'POST',
+      body: JSON.stringify({ title, message, path: window.location.href, timestamp: new Date().toISOString() }),
+      timeoutMs: 15000
+    });
+    toast('Developer notified.');
+  } catch (_) {
+    window.location.href = `mailto:${supportEmail}?subject=${encodeURIComponent(`BNDR SPEX issue: ${title}`)}&body=${encodeURIComponent(message)}`;
+  }
+}
+function toast(message, options = {}) {
+  els.toast.innerHTML = '';
+  const text = document.createElement('span');
+  text.textContent = message;
+  els.toast.appendChild(text);
+  if (options.notifyDeveloper) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Notify developer';
+    button.addEventListener('click', () => notifyDeveloper(options.title || message, message));
+    els.toast.appendChild(button);
+  }
   els.toast.classList.add('visible');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => els.toast.classList.remove('visible'), 4200);
+  toast.timer = setTimeout(() => els.toast.classList.remove('visible'), options.notifyDeveloper ? 9000 : 4200);
 }
-function showStatus(title, message) {
+function showStatus(title, message, options = {}) {
   els.outputTitle.textContent = title;
   els.output.textContent = message;
-  toast(title);
+  toast(title, options);
 }
 function cleanErrorMessage(error, fallback = 'Something went wrong. Please try again.') {
   const raw = error && error.data && error.data.error || error && error.message || '';
@@ -116,11 +155,26 @@ function cleanErrorMessage(error, fallback = 'Something went wrong. Please try a
   if (text.length > 220) return fallback;
   return text;
 }
+function handleAppError(title, error, fallback) {
+  const message = cleanErrorMessage(error, fallback);
+  const options = { title, notifyDeveloper: !isUserError(error) };
+  showStatus(title, message, options);
+}
 function closeBillingModal() {
   if (!els.billingModal) return;
   els.billingModal.classList.add('hidden');
   billingModalActions.primary = null;
   billingModalActions.secondary = null;
+}
+function closeSettingsModal() {
+  if (!els.settingsModal) return;
+  els.settingsModal.classList.add('hidden');
+}
+function openSettingsModal() {
+  if (!els.settingsModal) return;
+  const email = session && session.user && session.user.email || 'Account';
+  els.settingsEmail.textContent = email;
+  els.settingsModal.classList.remove('hidden');
 }
 function showBillingModal(title, message, options = {}) {
   if (!els.billingModal) return toast(title);
@@ -145,7 +199,11 @@ function safeRedirect(url, fallbackTitle = 'Link could not open') {
 }
 async function safeRun(action, fallbackMessage) {
   try { return await action(); }
-  catch (error) { toast(cleanErrorMessage(error, fallbackMessage)); return null; }
+  catch (error) {
+    const message = cleanErrorMessage(error, fallbackMessage);
+    toast(message, { title: fallbackMessage, notifyDeveloper: !isUserError(error) });
+    return null;
+  }
 }
 function setProgress(percent, label, elapsed) {
   if (!els.progressPanel) return;
@@ -195,6 +253,10 @@ async function requireSession() {
   const result = await supabase.auth.getSession();
   session = result.data.session;
   if (!session) window.location.href = '/login.html';
+}
+function accountInitial(email) {
+  const source = String(email || '').trim();
+  return source ? source[0].toUpperCase() : '?';
 }
 async function api(route, options = {}) {
   if (!session) await requireSession();
@@ -282,7 +344,10 @@ function renderAccount(data) {
     past_due: credits > 0 ? `Payment past due. ${creditPhrase(credits)} still available.` : 'Payment past due. Update billing to continue.',
     expired: 'No active paid access. Buy one SPEX or subscribe monthly.'
   };
-  els.accountLabel.textContent = data.user && data.user.email ? data.user.email : 'Account';
+  const email = data.user && data.user.email || '';
+  els.accountLabel.textContent = accountInitial(email);
+  els.accountLabel.title = email || 'Account';
+  if (els.settingsEmail) els.settingsEmail.textContent = email || 'Account';
   els.planStatus.dataset.accessState = access.state;
   els.planStatus.textContent = labels[access.state] || 'Expired';
   els.creditStatus.textContent = `${details[access.state] || details.expired} Plan status: ${status}.`;
@@ -363,8 +428,8 @@ async function generate(event) {
         secondaryAction: () => startCheckout('monthly', els.buyMonthly)
       });
     }
-    else if (error.status === 504) { failProgress('Generation timed out'); showStatus('Generation timed out', cleanErrorMessage(error, 'Generation is taking too long. Try a shorter product description or run it again.')); }
-    else { failProgress('Generation failed'); showStatus('Generation failed', cleanErrorMessage(error, 'Generation could not finish. Please try again.')); }
+    else if (error.status === 504) { failProgress('Generation timed out'); handleAppError('Generation timed out', error, 'Generation is taking too long. Try a shorter product description or run it again.'); }
+    else { failProgress('Generation failed'); handleAppError('Generation failed', error, 'Generation could not finish. Please try again.'); }
   } finally {
     setBusy(false);
   }
@@ -377,12 +442,14 @@ async function startCheckout(plan, button) {
     safeRedirect(data.url, 'Checkout could not open');
   } catch (error) {
     setButtonBusy(button, false);
+    const notifyDeveloper = !isUserError(error);
     showBillingModal('Checkout could not open', cleanErrorMessage(error, 'Checkout could not open. Please try again.'), {
       primaryLabel: 'Try again',
       primaryAction: () => startCheckout(plan, button),
       secondaryLabel: plan === 'single' ? 'Subscribe monthly' : 'Buy one SPEX',
       secondaryAction: () => plan === 'single' ? startCheckout('monthly', els.buyMonthly) : startCheckout('single', els.buySingle)
     });
+    if (notifyDeveloper) toast('Checkout could not open.', { title: 'Checkout could not open', notifyDeveloper: true });
   }
 }
 async function openPortal() {
@@ -394,12 +461,14 @@ async function openPortal() {
     safeRedirect(data.url, 'Billing could not open');
   } catch (error) {
     setButtonBusy(els.portal, false);
+    const notifyDeveloper = !isUserError(error);
     showBillingModal('Billing could not open', cleanErrorMessage(error, 'Billing could not open. Please try again.'), {
       primaryLabel: 'Open subscription checkout',
       primaryAction: () => startCheckout('monthly', els.buyMonthly),
       secondaryLabel: 'Buy one SPEX',
       secondaryAction: () => startCheckout('single', els.buySingle)
     });
+    if (notifyDeveloper) toast('Billing could not open.', { title: 'Billing could not open', notifyDeveloper: true });
   }
 }
 async function renameSelected() {
@@ -436,7 +505,7 @@ function downloadCurrent() {
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 0);
   } catch (_) {
-    toast('Download could not start. Copy the SPEX instead.');
+    toast('Download could not start. Copy the SPEX instead.', { title: 'Download could not start', notifyDeveloper: true });
   }
 }
 async function copyCurrent() {
@@ -480,19 +549,32 @@ async function recoverCheckoutReturn() {
       secondaryLabel: 'Open billing',
       secondaryAction: openPortal
     });
+    if (!isUserError(error)) toast('Billing confirmation needs attention.', { title: 'Billing confirmation failed', notifyDeveloper: true });
   }
+}
+async function signOut() {
+  await safeRun(() => supabase.auth.signOut(), 'Sign out could not finish cleanly.');
+  window.location.href = '/login.html';
 }
 async function init() {
   applyPriceLabels();
   setMode('system');
   await requireSession();
   els.form.addEventListener('submit', generate);
+  els.railGenerate.addEventListener('click', () => els.goal.focus());
+  els.railBilling.addEventListener('click', () => els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  els.railSettings.addEventListener('click', openSettingsModal);
+  els.accountLabel.addEventListener('click', openSettingsModal);
   els.modeSystem.addEventListener('click', () => setMode('system'));
   els.modeSchema.addEventListener('click', () => setMode('schema'));
   els.buySingle.addEventListener('click', () => startCheckout('single', els.buySingle));
   els.buyMonthly.addEventListener('click', () => startCheckout('monthly', els.buyMonthly));
   els.portal.addEventListener('click', openPortal);
   els.billingClose.addEventListener('click', closeBillingModal);
+  els.settingsClose.addEventListener('click', closeSettingsModal);
+  els.settingsBilling.addEventListener('click', () => { closeSettingsModal(); els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  els.settingsSignout.addEventListener('click', signOut);
+  els.settingsModal.addEventListener('click', (event) => { if (event.target === els.settingsModal) closeSettingsModal(); });
   els.billingPrimary.addEventListener('click', () => runBillingAction(billingModalActions.primary));
   els.billingSecondary.addEventListener('click', () => runBillingAction(billingModalActions.secondary));
   els.billingModal.addEventListener('click', (event) => { if (event.target === els.billingModal) closeBillingModal(); });
@@ -505,12 +587,9 @@ async function init() {
   els.renameInput.addEventListener('change', renameSelected);
   els.copyOutput.addEventListener('click', copyCurrent);
   els.downloadOutput.addEventListener('click', downloadCurrent);
-  els.signout.addEventListener('click', async () => {
-    await safeRun(() => supabase.auth.signOut(), 'Sign out could not finish cleanly.');
-    window.location.href = '/login.html';
-  });
+  els.signout.addEventListener('click', signOut);
   await recoverCheckoutReturn();
   await safeRun(loadAccount, 'Account status could not load.');
   await safeRun(loadSpecs, 'Saved SPEX could not load.');
 }
-init().catch((error) => { showStatus('App failed to initialize', cleanErrorMessage(error, 'The app could not start. Refresh and sign in again.')); });
+init().catch((error) => { handleAppError('App failed to initialize', error, 'The app could not start. Refresh and sign in again.'); });

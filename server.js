@@ -617,6 +617,20 @@ async function deleteSpec(req, res, id) {
   await supabaseRest(`/specs?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   send(res, 200, { deleted: true });
 }
+async function notifyDeveloperHandler(req, res) {
+  const { user } = await verifyUser(req);
+  const body = await readJson(req);
+  const payload = {
+    user_id: user.id,
+    user_email: user.email ? '[redacted-email]' : null,
+    title: safeString(body.title, 120),
+    message: safeString(body.message, 500),
+    path: safeString(body.path, 300),
+    timestamp: safeString(body.timestamp, 80) || new Date().toISOString()
+  };
+  console.log('Developer notification', JSON.parse(redactLog(JSON.stringify(payload))));
+  send(res, 200, { notified: true });
+}
 async function meHandler(req, res) {
   const { user } = await verifyUser(req);
   const profile = await refreshBillingProfile(await getProfile(user));
@@ -659,6 +673,7 @@ async function route(req, res) {
   if (req.method === 'POST' && pathname === '/api/billing/checkout') return checkoutHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/billing/portal') return portalHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/billing/confirm') return confirmCheckoutHandler(req, res);
+  if (req.method === 'POST' && pathname === '/api/support/notify') return notifyDeveloperHandler(req, res);
   if (req.method === 'POST' && pathname === '/api/generate/system') return generateHandler(req, res, 'system');
   if (req.method === 'POST' && pathname === '/api/generate/schema') return generateHandler(req, res, 'schema');
   if (req.method === 'GET' && pathname === '/api/specs') return listSpecs(req, res);
