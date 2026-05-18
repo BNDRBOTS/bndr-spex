@@ -6,88 +6,123 @@
   <title>App | BNDR | SPEX</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body class="spex-body gemini-shell">
-  <header class="spex-topbar">
-    <a class="spex-brand" href="/">BNDR<span>|</span>SPEX</a>
-    <nav class="spex-nav" aria-label="Account navigation">
-      <span id="account-label" class="pill-button account-chip">Account</span>
-      <button id="portal" class="pill-button" type="button">Billing</button>
-      <button id="signout" class="pill-button" type="button">Sign out</button>
-    </nav>
-  </header>
+<body class="spex-body workbench-shell">
+  <div class="app-frame">
+    <header class="spex-rail" aria-label="Primary navigation">
+      <a class="rail-brand" href="/" aria-label="BNDR SPEX home">S</a>
+      <nav class="rail-nav" aria-label="Workspace actions">
+        <span class="rail-item active" title="Generation flow" aria-hidden="true">⌘</span>
+        <button id="refresh" class="rail-item" type="button" title="Refresh saved SPEX">↻</button>
+        <span class="rail-item" title="Billing" aria-hidden="true">◍</span>
+      </nav>
+      <div class="rail-bottom">
+        <span id="account-label" class="rail-account">Account</span>
+        <button id="signout" class="rail-item" type="button" title="Sign out">↗</button>
+      </div>
+    </header>
 
-  <main class="spex-workspace">
-    <section class="col-input">
-      <div class="input-header">
-        <h1>Product description</h1>
-        <p>One description in. Full SPEX out.</p>
+    <main class="app-canvas">
+      <header class="canvas-header">
+        <div>
+          <p class="panel-kicker">BNDR | SPEX</p>
+          <h1>Workspace</h1>
+        </div>
+        <p class="status-line">Status <span>Online</span></p>
+      </header>
+
+      <section class="prompt-zone" aria-label="Generate SPEX">
+        <form id="generate-form" class="prompt-card">
+          <label class="spex-description-label" for="goal_description">Product description</label>
+          <textarea id="goal_description" required minlength="8" rows="12" placeholder="Describe the product, app, workflow, or system you want turned into a complete build-ready SPEX."></textarea>
+          <div class="prompt-actions">
+            <div class="prompt-tools" aria-hidden="true">
+              <span>{ }</span>
+              <span>SPEC</span>
+            </div>
+            <button id="generate-button" class="button button-lux generate-button" type="submit">Generate SPEX</button>
+          </div>
+        </form>
+
+        <section class="output-stage" aria-label="Generated SPEX output">
+          <div class="stage-placeholder" aria-hidden="true">
+            <span class="stage-cube">◇</span>
+            <span>Awaiting execution.</span>
+          </div>
+          <div class="output-container">
+            <h2 id="output-title">Nothing generated yet</h2>
+            <pre id="output" class="output-data"></pre>
+            <div class="output-actions">
+              <button id="copy-output" class="button button-secondary" type="button">Copy</button>
+              <button id="download-output" class="button button-secondary" type="button">Download</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <aside class="app-config" aria-label="Account, billing, progress, and saved SPEX">
+      <header class="config-header">Parameters</header>
+
+      <div class="config-body">
+        <section id="progress-panel" class="config-section progress-panel hidden" aria-live="polite">
+          <div class="section-row">
+            <span class="section-label">Generation progress</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+          <p id="progress-step" class="progress-step">Preparing request</p>
+          <p id="progress-elapsed" class="progress-elapsed">0s elapsed</p>
+        </section>
+
+        <section class="config-section">
+          <span class="section-label">Access state</span>
+          <div class="billing-card">
+            <div class="billing-row">
+              <span id="plan-status">Loading</span>
+            </div>
+            <p id="credit-status" class="muted"></p>
+          </div>
+        </section>
+
+        <section class="config-section">
+          <span class="section-label">Payment actions</span>
+          <div class="payment-actions">
+            <button id="portal" class="button button-secondary" type="button">Billing portal</button>
+            <button id="buy-single" class="button button-secondary" type="button">Buy one SPEX</button>
+            <button id="buy-monthly" class="button button-secondary" type="button">Subscribe monthly</button>
+          </div>
+        </section>
+
+        <section class="config-section saved-section">
+          <span class="section-label">Saved SPEX</span>
+          <div id="spec-list" class="saved-list"></div>
+        </section>
+
+        <section class="config-section detail-section">
+          <span class="section-label">Saved detail</span>
+          <h2 id="detail-title">Select a saved SPEX</h2>
+          <label class="hidden" id="rename-wrap" for="rename-input">Rename<input id="rename-input"></label>
+          <pre id="detail-output" class="output-data detail-output"></pre>
+          <button id="delete-spec" class="button button-danger hidden" type="button">Delete</button>
+        </section>
       </div>
 
-      <form id="generate-form" class="spex-form">
-        <label class="spex-description-label" for="goal_description">Product description</label>
-        <textarea id="goal_description" required minlength="8" rows="12" placeholder="Describe the product, app, workflow, or system you want turned into a complete build-ready SPEX."></textarea>
-        <button id="generate-button" class="pill-button pill-primary generate-button" type="submit">Generate SPEX</button>
-      </form>
-    </section>
-
-    <aside class="col-right" aria-label="SPEX output and saved work">
-      <section id="progress-panel" class="glass-panel meta-section progress-panel hidden" aria-live="polite">
-        <div class="meta-title">Generation progress <span id="progress-percent">0%</span></div>
-        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
-        <div id="progress-step" class="progress-step">Preparing request</div>
-        <div id="progress-elapsed" class="progress-elapsed">0s elapsed</div>
-      </section>
-
-      <section class="glass-panel meta-section output-panel">
-        <div class="meta-title">Generated SPEX</div>
-        <div class="output-container">
-          <h2 id="output-title">Nothing generated yet</h2>
-          <pre id="output" class="output-data"></pre>
-          <div class="output-actions">
-            <button id="copy-output" class="pill-button" type="button">Copy</button>
-            <button id="download-output" class="pill-button accent-button" type="button">Download</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="glass-panel meta-section">
-        <div class="meta-title">Account status</div>
-        <h2 id="plan-status">Loading</h2>
-        <p id="credit-status" class="muted"></p>
-      </section>
-
-      <section class="glass-panel meta-section">
-        <div class="meta-title">Access</div>
-        <div class="access-actions">
-          <button id="buy-single" class="pill-button" type="button">Buy one SPEX</button>
-          <button id="buy-monthly" class="pill-button" type="button">Subscribe monthly</button>
-        </div>
-      </section>
-
-      <section class="glass-panel meta-section">
-        <div class="meta-title">Saved SPEX <button id="refresh" class="refresh-button" type="button">Refresh</button></div>
-        <div id="spec-list" class="saved-list"></div>
-      </section>
-
-      <section class="glass-panel meta-section saved-detail-section">
-        <div class="meta-title">Saved detail</div>
-        <h2 id="detail-title">Select a saved SPEX</h2>
-        <label class="hidden" id="rename-wrap" for="rename-input">Rename<input id="rename-input"></label>
-        <pre id="detail-output" class="output-data detail-output"></pre>
-        <button id="delete-spec" class="pill-button danger-button hidden" type="button">Delete</button>
-      </section>
+      <footer class="app-legal">
+        <span>© 2026 BNDR LLC. All rights reserved.</span>
+        <a href="https://bndrllc.com">bndrllc.com</a>
+      </footer>
     </aside>
-  </main>
+  </div>
 
   <div id="billing-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="billing-modal-title">
     <div class="billing-modal">
-      <div class="meta-title">Billing recovery</div>
+      <div class="section-label">Billing recovery</div>
       <h2 id="billing-modal-title">Billing needs attention</h2>
       <p id="billing-modal-message" class="muted"></p>
       <div class="modal-actions">
-        <button id="billing-modal-primary" class="pill-button pill-primary" type="button">Open billing</button>
-        <button id="billing-modal-secondary" class="pill-button" type="button">Subscribe monthly</button>
-        <button id="billing-modal-close" class="pill-button" type="button">Close</button>
+        <button id="billing-modal-primary" class="button button-lux" type="button">Open billing</button>
+        <button id="billing-modal-secondary" class="button button-secondary" type="button">Subscribe monthly</button>
+        <button id="billing-modal-close" class="button button-secondary" type="button">Close</button>
       </div>
     </div>
   </div>

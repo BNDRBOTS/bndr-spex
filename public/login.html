@@ -2,27 +2,381 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in | BNDR | SPEX</title>
-  <link rel="stylesheet" href="/styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="description" content="Secure authentication gateway for BNDR | SPEX.">
+  <title>Login - BNDR | SPEX</title>
+  <style>
+    :root {
+      --bndr-bg: #151519;
+      --bndr-bg-gradient: radial-gradient(circle at 50% 42%, #26262D 0%, #18181D 44%, #101014 100%);
+      --bndr-surface: #202026;
+      --bndr-surface-hover: #292932;
+      --bndr-surface-inset: #111116;
+      --bndr-border: rgba(255, 255, 255, 0.12);
+      --bndr-border-focus: rgba(255, 255, 255, 0.34);
+      --bndr-inner-glow: inset 0 1px 0px rgba(255, 255, 255, 0.11), inset 0 -1px 0 rgba(0, 0, 0, 0.38);
+      --bndr-fg: #F3F4F6;
+      --bndr-fg-muted: #8E919A;
+      --bndr-fg-subtle: #676A73;
+      --bndr-accent: #F3F4F6;
+      --bndr-accent-invert: #08080A;
+      --light-red: #FF5F56;
+      --light-yellow: #FFBD2E;
+      --light-green: #27C93F;
+      --space-2xs: 0.25rem;
+      --space-xs: 0.5rem;
+      --space-sm: 1rem;
+      --space-md: 1.5rem;
+      --space-lg: 2.25rem;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 24px;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --ease-clinical: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      background-color: var(--bndr-bg);
+      background-image: var(--bndr-bg-gradient);
+      color: var(--bndr-fg);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: var(--bndr-fg);
+      text-decoration: none;
+      transition: color 0.3s var(--ease-clinical);
+    }
+
+    a:hover { color: var(--bndr-fg-muted); }
+
+    .site-header {
+      width: 100%;
+      padding: var(--space-md) var(--space-lg);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: absolute;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 1.125rem;
+      letter-spacing: -0.03em;
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .brand span {
+      color: var(--bndr-fg-muted);
+      font-weight: 400;
+    }
+
+    main {
+      flex: 1;
+      width: 100%;
+      display: grid;
+      place-items: center;
+      padding: var(--space-lg);
+      margin-top: clamp(3rem, 8vh, 6rem);
+    }
+
+    .login-panel {
+      width: 100%;
+      max-width: 440px;
+      background-color: var(--bndr-surface);
+      border: 1px solid var(--bndr-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--bndr-inner-glow), 0 1px 2px rgba(255, 255, 255, 0.04), 0 18px 44px -18px rgba(0, 0, 0, 0.86), 0 42px 92px -34px rgba(0, 0, 0, 0.92);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-bar {
+      padding: var(--space-sm) var(--space-md);
+      border-bottom: 1px solid var(--bndr-border);
+      background-color: rgba(34, 34, 40, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      color: var(--bndr-fg-subtle);
+    }
+
+    .panel-bar-dots { display: flex; gap: 8px; }
+
+    .dot {
+      display: block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      position: relative;
+      background-clip: padding-box;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .dot.red { background-color: var(--light-red); box-shadow: 0 0 6px rgba(255, 95, 86, 0.2); animation: pulseRed 3.5s infinite ease-in-out; }
+    .dot.yellow { background-color: var(--light-yellow); box-shadow: 0 0 6px rgba(255, 189, 46, 0.2); animation: pulseYellow 3.5s infinite 1.1s ease-in-out; }
+    .dot.green { background-color: var(--light-green); box-shadow: 0 0 6px rgba(39, 201, 63, 0.2); animation: pulseGreen 3.5s infinite 2.2s ease-in-out; }
+
+    @keyframes pulseRed {
+      0%, 100% { box-shadow: 0 0 4px rgba(255, 95, 86, 0.3); filter: brightness(0.95); }
+      50% { box-shadow: 0 0 14px rgba(255, 95, 86, 0.85); filter: brightness(1.15); }
+    }
+    @keyframes pulseYellow {
+      0%, 100% { box-shadow: 0 0 4px rgba(255, 189, 46, 0.3); filter: brightness(0.95); }
+      50% { box-shadow: 0 0 14px rgba(255, 189, 46, 0.85); filter: brightness(1.15); }
+    }
+    @keyframes pulseGreen {
+      0%, 100% { box-shadow: 0 0 4px rgba(39, 201, 63, 0.3); filter: brightness(0.95); }
+      50% { box-shadow: 0 0 14px rgba(39, 201, 63, 0.85); filter: brightness(1.15); }
+    }
+
+    .login-workspace {
+      padding: var(--space-lg);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: var(--space-xs);
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      margin-bottom: var(--space-2xs);
+      color: var(--bndr-fg);
+    }
+
+    .subtitle {
+      font-size: 0.8125rem;
+      color: var(--bndr-fg-muted);
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    .label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--bndr-fg-muted);
+    }
+
+    .forgot-link {
+      font-size: 0.75rem;
+      color: var(--bndr-fg-muted);
+    }
+
+    .forgot-link:hover {
+      color: var(--bndr-fg);
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      background-color: var(--bndr-surface-inset);
+      border: 1px solid var(--bndr-border);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      color: var(--bndr-fg);
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      outline: none;
+      transition: all 0.3s var(--ease-clinical);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    input[type="email"]:focus,
+    input[type="password"]:focus {
+      border-color: var(--bndr-border-focus);
+      background-color: var(--bndr-bg);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.32), 0 0 0 3px rgba(255, 255, 255, 0.08), 0 10px 24px -18px rgba(0, 0, 0, 0.85);
+    }
+
+    input::placeholder { color: var(--bndr-fg-subtle); }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      transition: all 0.25s var(--ease-clinical);
+      cursor: pointer;
+    }
+
+    .button-lux {
+      background: linear-gradient(180deg, #FFFFFF 0%, #D8D9DD 100%);
+      color: var(--bndr-accent-invert);
+      box-shadow: inset 0 1px 0px rgba(255, 255, 255, 0.9), 0 6px 18px rgba(255, 255, 255, 0.08), 0 18px 42px -26px rgba(0, 0, 0, 0.8);
+      margin-top: var(--space-xs);
+    }
+
+    .button-lux:hover {
+      background: linear-gradient(180deg, #FFFFFF 0%, #ECECEF 100%);
+      box-shadow: inset 0 1px 0px rgba(255, 255, 255, 1), 0 6px 20px rgba(255, 255, 255, 0.08);
+      transform: translateY(-0.5px);
+    }
+
+    .button-lux:active {
+      transform: translateY(0);
+      box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.15);
+    }
+
+    .button-secondary {
+      background-color: transparent;
+      color: var(--bndr-fg);
+      border: 1px solid var(--bndr-border);
+    }
+
+    .button-secondary:hover {
+      background-color: var(--bndr-surface-hover);
+      border-color: var(--bndr-border-focus);
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: var(--space-xs) 0;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid var(--bndr-border);
+    }
+
+    .divider span {
+      padding: 0 var(--space-sm);
+      color: var(--bndr-fg-subtle);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+    }
+
+    .create-account-prompt {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+      text-align: center;
+    }
+
+    .create-account-prompt p {
+      font-size: 0.8125rem;
+      color: var(--bndr-fg-muted);
+    }
+
+    .error-message,
+    .message {
+      background-color: rgba(255, 95, 86, 0.08);
+      border: 1px solid rgba(255, 95, 86, 0.25);
+      color: var(--light-red);
+      padding: 0.625rem var(--space-md);
+      border-radius: var(--radius-sm);
+      font-size: 0.8125rem;
+      margin-bottom: var(--space-xs);
+      text-align: center;
+      font-weight: 500;
+      min-height: 0;
+    }
+
+    .message:empty {
+      display: none;
+    }
+  </style>
 </head>
-<body class="auth-body">
-  <main class="auth-shell">
-    <section class="auth-card">
-      <a class="brand auth-brand" href="/">BNDR<span>SPEX</span></a>
-      <h1>Sign in to BNDR | SPEX.</h1>
-      <p>Create an account to save specs, use paid credits, and manage billing.</p>
-      <form id="auth-form" class="stack">
-        <label>Email<input id="email" type="email" autocomplete="email" required></label>
-        <label>Password<input id="password" type="password" autocomplete="current-password" minlength="8" required></label>
-        <div class="grid-two">
-          <button class="button" type="submit" data-action="signin">Sign in</button>
-          <button class="button button-secondary" type="button" id="signup">Create account</button>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">BNDR<span>SPEX</span></a>
+  </header>
+
+  <main>
+    <div class="login-panel" aria-label="Authentication Secure Gateway">
+      <div class="panel-bar">
+        <div class="panel-bar-dots">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
         </div>
-      </form>
-      <p id="auth-message" class="message" role="status"></p>
-    </section>
+        <span>GATEWAY_AUTH</span>
+      </div>
+
+      <div class="login-workspace">
+        <div class="login-header">
+          <h1>Sign In</h1>
+          <p class="subtitle">Access your SPEX environment.</p>
+        </div>
+
+        <p id="auth-message" class="message" role="status"></p>
+
+        <form id="auth-form">
+          <div class="form-group">
+            <label for="email">Account Email</label>
+            <input type="email" id="email" required autocomplete="email" placeholder="name@domain.com">
+          </div>
+
+          <div class="form-group" style="margin-top: var(--space-sm);">
+            <div class="label-row">
+              <label for="password">Security Key</label>
+              <a href="mailto:support@bndrllc.com" class="forgot-link">Forgot Password?</a>
+            </div>
+            <input type="password" id="password" required autocomplete="current-password" minlength="8" placeholder="••••••••••••">
+          </div>
+
+          <button type="submit" class="button button-lux" data-action="signin">Authenticate</button>
+        </form>
+
+        <div class="divider"><span>OR</span></div>
+
+        <div class="create-account-prompt">
+          <p>Don't have a SPEX workspace?</p>
+          <button id="signup" type="button" class="button button-secondary">Create Account</button>
+        </div>
+      </div>
+    </div>
   </main>
+
   <script src="/env.js"></script>
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
