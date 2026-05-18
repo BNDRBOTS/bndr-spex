@@ -64,6 +64,13 @@ function specRowsFor(url) {
 function makeSpecOutput() {
   return Object.fromEntries(systemSpecKeys.map((key) => [key, key === 'module_definitions' || key === 'test_plan' ? ['covered'] : { covered: true }]));
 }
+function makeSchemaOutput() {
+  return {
+    structured_schema: { instruction: 'directive', input: { context: {} }, output_format: { response_fields: {} }, final_instruction: 'instruction' },
+    validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'],
+    meta_tag: 'bndr_spex_merged_schema_v1'
+  };
+}
 function sign(body, timestamp = Math.floor(Date.now() / 1000)) {
   const digest = crypto.createHmac('sha256', process.env.STRIPE_WEBHOOK_SECRET).update(`${timestamp}.${body}`).digest('hex');
   return `t=${timestamp},v1=${digest}`;
@@ -160,7 +167,10 @@ function mockFetch(url, options = {}) {
 
   if (href === 'https://api.deepseek.com/chat/completions') {
     assert.strictEqual(authHeader(options), 'Bearer deepseek-secret', 'generation uses DeepSeek server key');
-    return Promise.resolve(json({ id: 'deepseek-request-1', choices: [{ message: { content: JSON.stringify(makeSpecOutput()) } }] }));
+    const body = readBody(options);
+    const systemPrompt = String(body.messages && body.messages[0] && body.messages[0].content || '');
+    const output = systemPrompt.includes('structured_schema, validation_flags, meta_tag') ? makeSchemaOutput() : makeSpecOutput();
+    return Promise.resolve(json({ id: 'deepseek-request-1', choices: [{ message: { content: JSON.stringify(output) } }] }));
   }
 
   return Promise.reject(new Error(`Unexpected fetch: ${href}`));
@@ -274,6 +284,13 @@ function authed(options = {}) {
     me = await request(base, '/api/me', authed({ method: 'GET' }));
     assert.strictEqual(me.body.access.state, 'credit', 'credit access label returned');
 
+    const schemaGenerate = await request(base, '/api/generate/schema', authed({ method: 'POST', body: JSON.stringify({ goal_description: 'Build a reusable intake schema for client project requests.' }) }));
+    assert.strictEqual(schemaGenerate.response.status, 200, 'schema generate succeeds');
+    assert.strictEqual(schemaGenerate.body.spec.type, 'schema', 'schema generation saves schema type');
+    assert.strictEqual(schemaGenerate.body.spec.output.meta_tag, 'bndr_spex_merged_schema_v1', 'schema output has expected meta tag');
+    assert.deepStrictEqual(Object.keys(schemaGenerate.body.spec.output).sort(), ['meta_tag', 'structured_schema', 'validation_flags'], 'schema output has exact keys');
+    assert.strictEqual(profile.single_spec_credits, 0, 'schema generation consumes credit atomically on save');
+
     profile = { ...profile, subscription_id: null, subscription_status: 'canceled', subscription_current_period_end: new Date(Date.now() - 86400).toISOString(), single_spec_credits: 0 };
     me = await request(base, '/api/me', authed({ method: 'GET' }));
     assert.strictEqual(me.body.access.state, 'expired', 'expired access label returned');
@@ -294,7 +311,7 @@ function authed(options = {}) {
     assert.ok(/@media \(max-width: 720px\)/.test(css.text), 'mobile breakpoint present');
     assert.ok(css.text.includes('.modal-actions'), 'billing modal mobile styles present');
 
-    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate save reopen webhook-labels sanitized-errors mobile');
+    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema save reopen webhook-labels sanitized-errors mobile');
   } finally {
     await close();
     global.fetch = nativeFetch;

@@ -64,6 +64,15 @@
       <header class="config-header">Parameters</header>
 
       <div class="config-body">
+        <section class="config-section">
+          <span class="section-label">Output type</span>
+          <div class="mode-control" role="tablist" aria-label="Generation output type">
+            <button id="mode-system" class="mode-button active" type="button" role="tab" aria-selected="true">System SPEX</button>
+            <button id="mode-schema" class="mode-button" type="button" role="tab" aria-selected="false">Structured Schema</button>
+          </div>
+          <p id="mode-description" class="muted">Full build-ready technical specification with architecture, modules, APIs, data flow, validation logic, deployment, and a final reusable schema.</p>
+        </section>
+
         <section id="progress-panel" class="config-section progress-panel hidden" aria-live="polite">
           <div class="section-row">
             <span class="section-label">Generation progress</span>

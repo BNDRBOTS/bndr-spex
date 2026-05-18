@@ -79,8 +79,8 @@ if (leakedFields.length) fail('customer UI has no required technical fields', le
 
 const appChecks = [
   ['one required product field', /id="goal_description"[\s\S]*required/],
-  ['single generation endpoint from app', /\/api\/generate\/system/],
-  ['no schema tabs in app', !/tool-tabs|data-mode|schema-fields|system-fields/.test(appHtml + appJs)],
+  ['generation endpoints from app', /\/api\/generate\/system/.test(appJs) && /\/api\/generate\/schema/.test(appJs)],
+  ['schema mode wired in app', /id="mode-schema"/.test(appHtml) && /setMode\('schema'\)/.test(appJs) && /outputModes[\s\S]*schema[\s\S]*\/api\/generate\/schema/.test(appJs)],
   ['real checkout buttons wired', /startCheckout\('single'/.test(appJs) && /startCheckout\('monthly'/.test(appJs)],
   ['saved SPEX wired', /\/api\/specs/.test(appJs) && /loadSpec/.test(appJs)],
   ['mobile styles present', /@media \(max-width: 720px\)/.test(styles) && /grid-template-columns: 1fr/.test(styles)],
@@ -104,6 +104,8 @@ const serverChecks = [
   ['Supabase user verification', /\/auth\/v1\/user/],
   ['Supabase service role REST', /SUPABASE_SERVICE_ROLE_KEY/],
   ['DeepSeek JSON output', /response_format[\s\S]*json_object/],
+  ['Structured schema route', /\/api\/generate\/schema[\s\S]*generateHandler\(req, res, 'schema'\)/],
+  ['Structured schema validation', /schemaKeys[\s\S]*structured_schema[\s\S]*validation_flags[\s\S]*meta_tag[\s\S]*Structured schema failed validation/],
   ['Merged SPEX prompt', /BNDR \| SPEX converts one plain-language product description/],
   ['One-description backend input', /required_user_input[\s\S]*goal_description/],
   ['Derived output keys', /deterministic_derivation_logic[\s\S]*payment_access_logic[\s\S]*final_schema/],

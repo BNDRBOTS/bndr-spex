@@ -5,6 +5,8 @@ const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co',
 
 let session = null;
 let currentOutput = null;
+let currentOutputType = 'system';
+let currentMode = 'system';
 let selectedSpecId = null;
 let progressTimer = null;
 let progressStartedAt = 0;
@@ -23,6 +25,9 @@ const els = {
   form: $('generate-form'),
   goal: $('goal_description'),
   generateButton: $('generate-button'),
+  modeSystem: $('mode-system'),
+  modeSchema: $('mode-schema'),
+  modeDescription: $('mode-description'),
   progressPanel: $('progress-panel'),
   progressFill: $('progress-fill'),
   progressPercent: $('progress-percent'),
@@ -48,16 +53,49 @@ const els = {
 
 const billingModalActions = { primary: null, secondary: null };
 
-const progressSteps = [
-  { at: 0, pct: 6, label: 'Checking account access' },
-  { at: 3, pct: 14, label: 'Preparing description' },
-  { at: 8, pct: 24, label: 'Starting reasoning pass' },
-  { at: 18, pct: 38, label: 'Deriving architecture and modules' },
-  { at: 35, pct: 54, label: 'Deriving data, API, UI, billing, and deploy logic' },
-  { at: 60, pct: 72, label: 'Validating SPEX structure' },
-  { at: 90, pct: 86, label: 'Waiting for final model response' },
-  { at: 115, pct: 94, label: 'Finalizing saved SPEX' }
-];
+const outputModes = {
+  system: {
+    route: '/api/generate/system',
+    outputLabel: 'SPEX',
+    buttonLabel: 'Generate SPEX',
+    busyLabel: 'Generating SPEX...',
+    description: 'Full build-ready technical specification with architecture, modules, APIs, data flow, validation logic, deployment, and a final reusable schema.',
+    placeholder: 'Describe the product, app, workflow, or system you want turned into a complete build-ready SPEX.'
+  },
+  schema: {
+    route: '/api/generate/schema',
+    outputLabel: 'Structured schema',
+    buttonLabel: 'Generate Schema',
+    busyLabel: 'Generating Schema...',
+    description: 'Reusable structured schema output with clear fields, validation flags, and a model-ready meta tag.',
+    placeholder: 'Describe the product, app, workflow, or system you want turned into a reusable structured schema.'
+  }
+};
+
+const progressStepsByMode = {
+  system: [
+    { at: 0, pct: 6, label: 'Checking account access' },
+    { at: 3, pct: 14, label: 'Preparing description' },
+    { at: 8, pct: 24, label: 'Starting reasoning pass' },
+    { at: 18, pct: 38, label: 'Deriving architecture and modules' },
+    { at: 35, pct: 54, label: 'Deriving data, API, UI, billing, and deploy logic' },
+    { at: 60, pct: 72, label: 'Validating SPEX structure' },
+    { at: 90, pct: 86, label: 'Waiting for final model response' },
+    { at: 115, pct: 94, label: 'Finalizing saved SPEX' }
+  ],
+  schema: [
+    { at: 0, pct: 6, label: 'Checking account access' },
+    { at: 3, pct: 14, label: 'Preparing description' },
+    { at: 8, pct: 24, label: 'Starting schema derivation' },
+    { at: 18, pct: 38, label: 'Deriving fields and validation notes' },
+    { at: 35, pct: 54, label: 'Structuring reusable output format' },
+    { at: 60, pct: 72, label: 'Validating schema keys' },
+    { at: 90, pct: 86, label: 'Waiting for final model response' },
+    { at: 115, pct: 94, label: 'Finalizing saved schema' }
+  ]
+};
+
+function modeConfig(mode = currentMode) { return outputModes[mode] || outputModes.system; }
 
 function toast(message) {
   els.toast.textContent = message;
@@ -117,14 +155,16 @@ function setProgress(percent, label, elapsed) {
   els.progressStep.textContent = label;
   els.progressElapsed.textContent = `${elapsed}s elapsed`;
 }
-function beginProgress() {
+function beginProgress(mode = currentMode) {
+  const config = modeConfig(mode);
+  const steps = progressStepsByMode[mode] || progressStepsByMode.system;
   progressStartedAt = Date.now();
   clearInterval(progressTimer);
-  setProgress(6, 'Checking account access', 0);
+  setProgress(steps[0].pct, steps[0].label, 0);
   progressTimer = setInterval(() => {
     const seconds = Math.floor((Date.now() - progressStartedAt) / 1000);
-    const current = [...progressSteps].reverse().find((step) => seconds >= step.at) || progressSteps[0];
-    const next = progressSteps.find((step) => step.at > current.at);
+    const current = [...steps].reverse().find((step) => seconds >= step.at) || steps[0];
+    const next = steps.find((step) => step.at > current.at);
     let percent = current.pct;
     if (next) {
       const span = next.at - current.at;
@@ -132,13 +172,14 @@ function beginProgress() {
       percent = current.pct + ((next.pct - current.pct) * Math.min(1, offset / span));
     }
     setProgress(percent, current.label, seconds);
-    els.outputTitle.textContent = `Generating SPEX... ${seconds}s`;
-    els.output.textContent = 'Reasoning is still running. The SPEX will appear here when the model returns and the database save completes.';
+    els.outputTitle.textContent = `Generating ${config.outputLabel}... ${seconds}s`;
+    els.output.textContent = `Reasoning is still running. The ${config.outputLabel} will appear here when the model returns and the database save completes.`;
   }, 1000);
 }
-function completeProgress() {
+function completeProgress(mode = currentMode, saved = true) {
+  const config = modeConfig(mode);
   const elapsed = Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1000));
-  setProgress(100, 'SPEX generated and saved', elapsed);
+  setProgress(100, `${config.outputLabel} generated${saved ? ' and saved' : ''}`, elapsed);
   clearInterval(progressTimer);
   progressTimer = null;
 }
@@ -188,9 +229,25 @@ async function api(route, options = {}) {
 function pretty(value) { return JSON.stringify(value, null, 2); }
 function formatDate(value) { return value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : ''; }
 function payload() { return { goal_description: els.goal.value.trim() }; }
-function setBusy(isBusy) {
+function setMode(mode) {
+  if (!outputModes[mode]) return;
+  currentMode = mode;
+  const isSchema = mode === 'schema';
+  const config = modeConfig(mode);
+  els.modeSystem.classList.toggle('active', !isSchema);
+  els.modeSchema.classList.toggle('active', isSchema);
+  els.modeSystem.setAttribute('aria-selected', String(!isSchema));
+  els.modeSchema.setAttribute('aria-selected', String(isSchema));
+  els.modeDescription.textContent = config.description;
+  els.goal.placeholder = config.placeholder;
+  els.generateButton.textContent = config.buttonLabel;
+}
+function setBusy(isBusy, mode = currentMode) {
+  const config = modeConfig(mode);
   els.generateButton.disabled = isBusy;
-  els.generateButton.textContent = isBusy ? 'Generating SPEX...' : 'Generate SPEX';
+  els.modeSystem.disabled = isBusy;
+  els.modeSchema.disabled = isBusy;
+  els.generateButton.textContent = isBusy ? config.busyLabel : modeConfig(currentMode).buttonLabel;
 }
 function setButtonBusy(button, isBusy, text) {
   if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
@@ -276,19 +333,22 @@ async function generate(event) {
   event.preventDefault();
   const body = payload();
   if (!body.goal_description || body.goal_description.length < 8) return toast('Product description must be at least 8 characters.');
-  setBusy(true);
-  beginProgress();
+  const mode = currentMode;
+  const config = modeConfig(mode);
+  setBusy(true, mode);
+  beginProgress(mode);
   currentOutput = null;
+  currentOutputType = mode;
   try {
-    const data = await api('/api/generate/system', { method: 'POST', body: JSON.stringify(body), timeoutMs: 180000 });
+    const data = await api(config.route, { method: 'POST', body: JSON.stringify(body), timeoutMs: 180000 });
     currentOutput = data.spec.output;
-    completeProgress();
+    completeProgress(mode, data.saved !== false);
     if (data.saved === false) {
-      els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · not saved · ${Math.round(data.timing_ms / 1000)}s` : 'Generated SPEX · not saved';
+      els.outputTitle.textContent = data.timing_ms ? `Generated ${config.outputLabel} · not saved · ${Math.round(data.timing_ms / 1000)}s` : `Generated ${config.outputLabel} · not saved`;
       toast('Generated. Download or copy it now.');
     } else {
-      els.outputTitle.textContent = data.timing_ms ? `Generated SPEX · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || 'Generated SPEX';
-      toast('Generated and saved.');
+      els.outputTitle.textContent = data.timing_ms ? `Generated ${config.outputLabel} · ${Math.round(data.timing_ms / 1000)}s` : data.spec.title || `Generated ${config.outputLabel}`;
+      toast(`${config.outputLabel} generated and saved.`);
     }
     els.output.textContent = pretty(currentOutput);
     await safeRun(loadAccount, 'Account status could not refresh.');
@@ -367,12 +427,12 @@ async function deleteSelected() {
   }, 'Delete could not finish. Please try again.');
 }
 function downloadCurrent() {
-  if (!currentOutput) return toast('No generated SPEX to download.');
+  if (!currentOutput) return toast('No generated output to download.');
   try {
     const blob = new Blob([pretty(currentOutput)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `bndr-spex-${Date.now()}.json`;
+    link.download = `bndr-spex-${currentOutputType || 'output'}-${Date.now()}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 0);
   } catch (_) {
@@ -380,7 +440,7 @@ function downloadCurrent() {
   }
 }
 async function copyCurrent() {
-  if (!currentOutput) return toast('No generated SPEX to copy.');
+  if (!currentOutput) return toast('No generated output to copy.');
   try {
     await navigator.clipboard.writeText(pretty(currentOutput));
     toast('Copied.');
@@ -424,8 +484,11 @@ async function recoverCheckoutReturn() {
 }
 async function init() {
   applyPriceLabels();
+  setMode('system');
   await requireSession();
   els.form.addEventListener('submit', generate);
+  els.modeSystem.addEventListener('click', () => setMode('system'));
+  els.modeSchema.addEventListener('click', () => setMode('schema'));
   els.buySingle.addEventListener('click', () => startCheckout('single', els.buySingle));
   els.buyMonthly.addEventListener('click', () => startCheckout('monthly', els.buyMonthly));
   els.portal.addEventListener('click', openPortal);
