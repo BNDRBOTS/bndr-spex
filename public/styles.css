@@ -177,6 +177,122 @@ input::placeholder, textarea::placeholder { color: var(--bndr-fg-subtle); }
 .pricing-card, .card { padding: 22px; }
 .price { font-size: 3rem; line-height: 1; font-weight: 780; letter-spacing: -.07em; margin-bottom: 16px; }
 .footer { margin-top: 30px; padding: 28px 0 40px; color: var(--bndr-fg-muted); border-top: 1px solid var(--bndr-border); }
+
+@media (min-width: 1120px) and (min-height: 850px) {
+  .landing-body {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .landing-body .site-header {
+    height: 58px;
+    padding: 12px 28px 8px;
+  }
+  .landing-body main {
+    width: min(1180px, calc(100% - 44px));
+    height: calc(100dvh - 112px);
+    margin: 14px auto 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, .82fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 16px 20px;
+  }
+  .landing-body .hero,
+  .landing-body .section,
+  .landing-body .footer {
+    width: 100%;
+  }
+  .landing-body .hero {
+    grid-column: 1 / -1;
+    min-height: 0;
+    margin: 0;
+    grid-template-columns: minmax(0, .95fr) minmax(360px, .72fr);
+    gap: 18px;
+  }
+  .landing-body .hero-copy {
+    padding: clamp(30px, 4.1vh, 44px) clamp(34px, 4.4vw, 58px);
+  }
+  .landing-body .hero h1 {
+    font-size: clamp(3.4rem, 4.8vw, 4.9rem);
+    max-width: 680px;
+  }
+  .landing-body .hero-text {
+    font-size: clamp(.98rem, 1.35vw, 1.08rem);
+    margin-bottom: 0;
+  }
+  .landing-body .hero-actions { margin-top: 20px; }
+  .landing-body .hero-panel { padding: 20px; }
+  .landing-body .panel-bar { margin-bottom: 14px; }
+  .landing-body .spec-list {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .landing-body .spec-list li {
+    min-height: 38px;
+    padding: 9px 11px;
+    font-size: .86rem;
+  }
+  .landing-body .section {
+    padding: 0;
+    margin: 0;
+  }
+  .landing-body .product-section {
+    grid-column: 1 / 2;
+    display: grid;
+    grid-template-columns: minmax(210px, .68fr) minmax(0, 1.32fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .landing-body .product-section > div:first-child {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+  }
+  .landing-body .product-section h2,
+  .landing-body .pricing-section h2 {
+    font-size: clamp(1rem, 1.35vw, 1.22rem);
+  }
+  .landing-body .feature-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .landing-body .card,
+  .landing-body .pricing-card {
+    padding: 16px;
+    border-radius: var(--radius-md);
+  }
+  .landing-body .card p,
+  .landing-body .pricing-card p {
+    font-size: .9rem;
+    line-height: 1.42;
+    margin-bottom: 0;
+  }
+  .landing-body .compact-pricing {
+    grid-column: 2 / 3;
+    text-align: left;
+    align-self: stretch;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 8px;
+  }
+  .landing-body .pricing-grid {
+    max-width: none;
+    margin: 0;
+    gap: 10px;
+  }
+  .landing-body .price {
+    font-size: clamp(2.1rem, 3vw, 2.8rem);
+    margin: 6px 0 12px;
+  }
+  .landing-body .button-full { margin-top: 14px; }
+  .landing-body .footer {
+    width: min(1180px, calc(100% - 44px));
+    margin: 10px auto 0;
+    padding: 10px 0 12px;
+    font-size: .82rem;
+  }
+}
 .legal-page { min-height: 100dvh; width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 44px 0 70px; }
 .legal-card { padding: clamp(28px, 6vw, 58px); }
 .legal-card h1 { font-size: clamp(2.2rem, 7vw, 4rem); }

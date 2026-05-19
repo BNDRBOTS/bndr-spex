@@ -84,6 +84,7 @@ const appChecks = [
   ['real checkout buttons wired', /startCheckout\('single'/.test(appJs) && /startCheckout\('monthly'/.test(appJs)],
   ['saved SPEX wired', /\/api\/specs/.test(appJs) && /loadSpec/.test(appJs)],
   ['mobile styles present', /@media \(max-width: 720px\)/.test(styles) && /grid-template-columns: 1fr/.test(styles)],
+  ['desktop landing fits viewport', /class="landing-body"/.test(html) && /@media \(min-width: 1120px\) and \(min-height: 850px\)/.test(styles) && /\.landing-body[\s\S]*height:\s*100dvh[\s\S]*overflow:\s*hidden/.test(styles) && /compact-pricing/.test(html + styles)],
   ['billing modal wired', /billing-modal/.test(appHtml) && /showBillingModal/.test(appJs)],
   ['settings and support wired', /settings-modal/.test(appHtml) && /support@bndrllc\.com/.test(appHtml) && /openSettingsModal/.test(appJs)],
   ['developer notifications only for non-user errors', /\/api\/support\/notify/.test(appJs) && /userErrorStatuses[\s\S]*400[\s\S]*422/.test(appJs) && /notifyDeveloper: !isUserError\(error\)/.test(appJs)],
