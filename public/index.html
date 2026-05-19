@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="BNDR | SPEX converts product ideas into structured schemas and complete implementation-grade technical specifications.">
   <title>BNDR | SPEX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="landing-body">
@@ -96,6 +99,11 @@
   </footer>
   <script src="/env.js"></script>
   <script>
+    document.addEventListener('pointermove', (event) => {
+      document.body.style.setProperty('--mx', `${(event.clientX / window.innerWidth) * 100}%`);
+      document.body.style.setProperty('--my', `${(event.clientY / window.innerHeight) * 100}%`);
+    }, { passive: true });
+
     if (window.HD_ENV) {
       document.querySelectorAll('[data-single-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_SINGLE_DISPLAY);
       document.querySelectorAll('[data-monthly-price]').forEach((el) => el.textContent = window.HD_ENV.PRICE_MONTHLY_DISPLAY);

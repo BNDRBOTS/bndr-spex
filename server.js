@@ -95,10 +95,10 @@ function securityHeaders(contentType) {
     'Content-Security-Policy': [
       "default-src 'self'",
       "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://*.supabase.co https://api.stripe.com https://api.deepseek.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "connect-src 'self' https://*.supabase.co https://api.stripe.com https://api.deepseek.com https://fonts.googleapis.com https://fonts.gstatic.com",
       "img-src 'self' data:",
-      "font-src 'self'",
+      "font-src 'self' https://fonts.gstatic.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'"
