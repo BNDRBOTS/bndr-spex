@@ -15,6 +15,8 @@ const SERVER_REQUEST_TIMEOUT_MS = Number(process.env.SERVER_REQUEST_TIMEOUT_MS |
 const ACCOUNT_RETRY_ATTEMPTS = Number(process.env.ACCOUNT_RETRY_ATTEMPTS || 1);
 const BILLING_RETRY_ATTEMPTS = Number(process.env.BILLING_RETRY_ATTEMPTS || 1);
 const OUTBOUND_RETRY_DELAY_MS = Number(process.env.OUTBOUND_RETRY_DELAY_MS || 300);
+const SPEX_REPAIR_ATTEMPTS = Math.max(0, Number(process.env.SPEX_REPAIR_ATTEMPTS || 2));
+const LEGACY_INFERENCE_TERM = ['inf', 'erred'].join('');
 
 const systemSpecKeys = [
   'system_overview',
@@ -399,19 +401,87 @@ function parseModelJson(content) {
     throw Object.assign(new Error('DeepSeek returned invalid JSON'), { status: 502 });
   }
 }
-async function callDeepSeek({ mode, input }) {
+function hasContent(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return String(value || '').trim().length > 0;
+}
+function containsTerm(value, term) {
+  return JSON.stringify(value || '').toLowerCase().includes(String(term).toLowerCase());
+}
+function bindingGateFailures(bindings) {
+  const required = ['ui_component', 'backend_action', 'request_contract', 'response_contract', 'auth_or_entitlement', 'state_mutation', 'persistence_target', 'errors_and_fallbacks'];
+  if (!Array.isArray(bindings) || bindings.length === 0) return ['component_backend_bindings must be a non-empty implementation matrix'];
+  const failures = [];
+  bindings.slice(0, 12).forEach((binding, index) => {
+    if (!binding || typeof binding !== 'object' || Array.isArray(binding)) {
+      failures.push(`component_backend_bindings[${index}] must be an object`);
+      return;
+    }
+    for (const key of required) if (!hasContent(binding[key])) failures.push(`component_backend_bindings[${index}].${key} is required`);
+  });
+  return failures;
+}
+function outputGateFailures(output, mode) {
+  const failures = [];
+  const keys = mode === 'schema' ? schemaKeys : systemSpecKeys;
+  if (!validateKeys(output, keys)) failures.push(`Top-level keys must be exactly: ${keys.join(', ')}`);
+  if (containsTerm(output, LEGACY_INFERENCE_TERM)) failures.push('Use confirmed input, derived requirement, derived assumption, or validation requirement instead of legacy placeholder terminology.');
+  if (mode === 'schema') {
+    for (const key of ['structured_schema', 'validation_flags', 'failure_modes', 'fallback_recovery_logic', 'acceptance_criteria', 'meta_tag']) {
+      if (!hasContent(output && output[key])) failures.push(`${key} must be populated`);
+    }
+    failures.push(...bindingGateFailures(output && output.component_backend_bindings));
+    return failures;
+  }
+  for (const key of ['system_overview', 'user_intent_translation', 'architecture_spec', 'api_layer', 'data_flow', 'state_management', 'ui_ux_spec', 'payment_access_logic', 'security_privacy_logic', 'deployment_strategy', 'validation_logic', 'final_schema', 'final_instruction']) {
+    if (!hasContent(output && output[key])) failures.push(`${key} must be populated`);
+  }
+  for (const key of ['module_definitions', 'component_backend_bindings', 'failure_modes', 'fallback_recovery_logic', 'observability_support_logic', 'test_plan', 'acceptance_criteria']) {
+    if (!hasContent(output && output[key])) failures.push(`${key} must be populated`);
+  }
+  failures.push(...bindingGateFailures(output && output.component_backend_bindings));
+  return failures;
+}
+function repairUserContent(input, previous, failures) {
+  return JSON.stringify({
+    original_input: input,
+    previous_output: previous,
+    validation_failures: failures,
+    repair_instruction: 'Return the complete corrected JSON object only. Preserve the original user intent. Do not omit required sections. Avoid legacy placeholder terminology. Add missing implementation details, fallback behavior, acceptance criteria, and UI/backend bindings until every validation gate passes.'
+  });
+}
+async function fetchDeepSeekContent({ mode, inputContent }) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw configError('DEEPSEEK_API_KEY');
   const model = process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro';
   const isSystem = mode === 'system';
   const maxTokens = Number(process.env.DEEPSEEK_MAX_TOKENS || (isSystem ? 9000 : 4500));
-  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: deepSeekPrompt(mode) }, { role: 'user', content: JSON.stringify(input) }], response_format: { type: 'json_object' }, thinking: { type: process.env.DEEPSEEK_THINKING || 'enabled' }, reasoning_effort: process.env.DEEPSEEK_REASONING_EFFORT || 'high', temperature: 0.2, max_tokens: maxTokens, stream: false }), service: 'generation', timeoutMs: DEEPSEEK_TIMEOUT_MS });
-  const requestId = response.id || null;
-  const content = response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content;
-  const parsed = parseModelJson(content);
-  if (isSystem && !validateKeys(parsed, systemSpecKeys)) throw Object.assign(new Error('System spec failed schema validation'), { status: 502 });
-  if (!isSystem && !validateKeys(parsed, schemaKeys)) throw Object.assign(new Error('Structured schema failed validation'), { status: 502 });
-  return { output: parsed, model, requestId };
+  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'system', content: deepSeekPrompt(mode) }, { role: 'user', content: inputContent }], response_format: { type: 'json_object' }, thinking: { type: process.env.DEEPSEEK_THINKING || 'enabled' }, reasoning_effort: process.env.DEEPSEEK_REASONING_EFFORT || 'high', temperature: 0.15, max_tokens: maxTokens, stream: false }), service: 'generation', timeoutMs: DEEPSEEK_TIMEOUT_MS });
+  return { model, requestId: response.id || null, content: response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content };
+}
+async function callDeepSeek({ mode, input }) {
+  let inputContent = JSON.stringify(input);
+  let lastResult = null;
+  let lastFailures = [];
+  for (let attempt = 0; attempt <= SPEX_REPAIR_ATTEMPTS; attempt += 1) {
+    lastResult = await fetchDeepSeekContent({ mode, inputContent });
+    let parsed;
+    try {
+      parsed = parseModelJson(lastResult.content);
+    } catch (error) {
+      lastFailures = [error.message || 'Model returned invalid JSON'];
+      inputContent = repairUserContent(input, String(lastResult.content || '').slice(0, 5000), lastFailures);
+      continue;
+    }
+    lastFailures = outputGateFailures(parsed, mode);
+    if (!lastFailures.length) return { output: parsed, model: lastResult.model, requestId: lastResult.requestId };
+    inputContent = repairUserContent(input, parsed, lastFailures);
+  }
+  const validationLabel = mode === 'schema' ? 'Structured schema failed validation' : 'System spec failed validation';
+  const error = appError(`${validationLabel}: ${lastFailures.join('; ')}`, 502, 'spex_validation_failed', 'Generation did not pass validation. Please try again.');
+  error.validation_failures = lastFailures;
+  throw error;
 }
 async function saveSpec(userId, type, title, input, result, entitlementSource) {
   const payload = { target_user: userId, spec_type: type, spec_title: title, spec_input: input, spec_output: result.output, spec_model: result.model, spec_request_id: result.requestId };

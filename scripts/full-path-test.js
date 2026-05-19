@@ -62,7 +62,25 @@ function specRowsFor(url) {
   return [...specs].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
 function makeSpecOutput() {
-  return Object.fromEntries(systemSpecKeys.map((key) => [key, ['module_definitions', 'component_backend_bindings', 'failure_modes', 'test_plan', 'acceptance_criteria'].includes(key) ? ['covered'] : { covered: true }]));
+  const output = Object.fromEntries(systemSpecKeys.map((key) => [key, { covered: true }]));
+  output.module_definitions = [{ name: 'generation workspace', responsibility: 'collect product description and display generated SPEX' }];
+  output.component_backend_bindings = [{
+    ui_component: 'generate form',
+    backend_action: '/api/generate/system',
+    request_contract: { goal_description: 'string' },
+    response_contract: { spec: 'object', entitlement: 'object' },
+    auth_or_entitlement: 'authenticated user with active subscription or generation credit',
+    state_mutation: 'output panel renders response and saved list refreshes',
+    persistence_target: 'specs table',
+    errors_and_fallbacks: ['validation toast for short input', 'billing modal for payment_required', 'copy/download if save fallback returns unsaved output']
+  }];
+  output.failure_modes = [{ condition: 'provider timeout', user_cause: false, expected_system_behavior: 'show retry-safe timeout message and preserve user input' }];
+  output.fallback_recovery_logic = [{ trigger: 'save failure after generation', fallback: 'return unsaved output', recovery: 'copy or download output and retry save later' }];
+  output.observability_support_logic = { logs: ['request id', 'user id', 'safe route'], redaction: ['email', 'tokens', 'provider keys'], developer_notification: 'system errors only' };
+  output.test_plan = ['Generate SPEX with valid description and verify all required sections are populated'];
+  output.acceptance_criteria = ['component_backend_bindings includes UI, backend, payload, response, auth, state, persistence, and fallback details'];
+  output.final_instruction = 'Build from this SPEX without omitting validation, fallback, or persistence requirements.';
+  return output;
 }
 function makeSchemaOutput() {
   return {
