@@ -27,6 +27,7 @@ const systemSpecKeys = [
   'integration_points',
   'deterministic_derivation_logic',
   'ui_ux_spec',
+  'component_backend_bindings',
   'payment_access_logic',
   'security_privacy_logic',
   'failure_modes',
@@ -39,7 +40,7 @@ const systemSpecKeys = [
   'final_schema',
   'final_instruction'
 ];
-const schemaKeys = ['structured_schema', 'validation_flags', 'failure_modes', 'fallback_recovery_logic', 'acceptance_criteria', 'meta_tag'];
+const schemaKeys = ['structured_schema', 'component_backend_bindings', 'validation_flags', 'failure_modes', 'fallback_recovery_logic', 'acceptance_criteria', 'meta_tag'];
 
 const publicEnv = {
   SUPABASE_URL: process.env.SUPABASE_URL || '',
@@ -318,6 +319,16 @@ function expectedJsonExample(mode) {
         implementation_notes: [],
         final_instruction: 'instruction'
       },
+      component_backend_bindings: [{
+        ui_component: 'screen, control, form, or state',
+        backend_action: 'route, RPC, service, or explicit inferred requirement',
+        request_contract: {},
+        response_contract: {},
+        auth_or_entitlement: 'required access condition',
+        state_mutation: 'client/server state impact',
+        persistence_target: 'database, storage, cache, or none',
+        errors_and_fallbacks: []
+      }],
       validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'],
       failure_modes: [{ condition: 'what can fail', user_cause: false, expected_system_behavior: 'specific behavior' }],
       fallback_recovery_logic: [{ trigger: 'failure trigger', fallback: 'fallback behavior', recovery: 'recovery path' }],
@@ -327,6 +338,7 @@ function expectedJsonExample(mode) {
   }
   return JSON.stringify(Object.fromEntries(systemSpecKeys.map((key) => {
     if (key.endsWith('_definitions') || ['failure_modes', 'test_plan', 'acceptance_criteria'].includes(key)) return [key, []];
+    if (key === 'component_backend_bindings') return [key, [{ ui_component: 'component name', backend_action: 'route or service action', request_contract: {}, response_contract: {}, auth_or_entitlement: 'access requirement', state_mutation: 'state change', persistence_target: 'storage target', errors_and_fallbacks: [] }]];
     if (key === 'final_instruction') return [key, 'concise execution directive'];
     return [key, {}];
   })), null, 2);
@@ -337,6 +349,8 @@ function mergedSpexPrompt() {
     'The only customer input is goal_description. Derive every needed technical dimension internally unless it is explicitly stated inside that description.',
     'Merge schema-standardization with end-to-end system-specification. Produce reusable JSON that a developer can implement without theatrical filler. Do not produce conversational advice.',
     'Derive runtime model, scope, platforms, constraints, dependencies, design requirements, data requirements, architecture, APIs, database and storage logic, auth, billing, UI states, deployment, validation, and testing from the description.',
+    'Assign UI components to matching backend responsibilities. For every screen, form, navigation control, primary CTA, generated output surface, saved-item surface, settings/support surface, billing/payment surface, loading state, empty state, and error state, map the UI component to backend route/action/service, request payload, response shape, auth or entitlement requirement, client/server state mutation, persistence target, and fallback behavior.',
+    'UI labels, component names, API routes, database entities, and payment/account concepts must be internally consistent. If a route, table, event, or service is inferred rather than supplied, label it inferred and include a validation requirement instead of pretending it already exists.',
     'Include concrete graceful fallback and failsafe behavior for expected failure paths: invalid input, unauthenticated access, authorization failure, payment failure, provider/model timeout, provider/model invalid JSON, database read/write failure, save-after-generation failure, network failure, rate limiting, empty states, loading states, retry exhaustion, and user recovery paths.',
     'Include observability and support handoff requirements: what should be logged, what must be redacted, what user-facing error is safe to show, when a developer notification is appropriate, and how support can reproduce the issue.',
     'Preserve the original description. Label inferred items as inferred. Put unclear items in open questions or validation requirements instead of inventing facts.',
@@ -352,6 +366,7 @@ function buildSystemPrompt() {
     'Return exactly these top-level keys and no others:',
     systemSpecKeys.join(', '),
     'Populate every field with concrete build-relevant content.',
+    'component_backend_bindings must be an implementation matrix connecting UI components to backend contracts, auth, persistence, state changes, errors, and fallbacks.',
     'failure_modes must list realistic failure conditions, whether they are user-caused or system-caused, visible symptoms, and expected system behavior.',
     'fallback_recovery_logic must map each important failure trigger to fallback behavior, retry/escape behavior, user messaging, and recovery path.',
     'observability_support_logic must define logging, redaction, developer notification, support contact, and reproduction context requirements.',
@@ -366,6 +381,7 @@ function buildSchemaPrompt() {
     'Return exactly these top-level keys and no others:',
     schemaKeys.join(', '),
     'structured_schema must include input_contract, output_contract, implementation_notes, and final_instruction.',
+    'component_backend_bindings must map UI fields, controls, states, and output surfaces to backend/API/data/auth/payment contracts when a UI exists or is implied.',
     'failure_modes must list schema-level validation, runtime, persistence, integration, and user recovery failures.',
     'fallback_recovery_logic must map schema validation and runtime failures to concrete fallback and recovery behavior.',
     'acceptance_criteria must be testable conditions proving the schema is complete and reusable.',

@@ -27,7 +27,7 @@ let stripeCheckoutFailures = 0;
 let failNextProfilePatch = false;
 
 const systemSpecKeys = [
-  'system_overview', 'user_intent_translation', 'architecture_spec', 'module_definitions', 'api_layer', 'data_flow', 'state_management', 'integration_points', 'deterministic_derivation_logic', 'ui_ux_spec', 'payment_access_logic', 'security_privacy_logic', 'failure_modes', 'fallback_recovery_logic', 'observability_support_logic', 'deployment_strategy', 'validation_logic', 'test_plan', 'acceptance_criteria', 'final_schema', 'final_instruction'
+  'system_overview', 'user_intent_translation', 'architecture_spec', 'module_definitions', 'api_layer', 'data_flow', 'state_management', 'integration_points', 'deterministic_derivation_logic', 'ui_ux_spec', 'component_backend_bindings', 'payment_access_logic', 'security_privacy_logic', 'failure_modes', 'fallback_recovery_logic', 'observability_support_logic', 'deployment_strategy', 'validation_logic', 'test_plan', 'acceptance_criteria', 'final_schema', 'final_instruction'
 ];
 
 function json(body, status = 200) {
@@ -62,11 +62,12 @@ function specRowsFor(url) {
   return [...specs].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
 function makeSpecOutput() {
-  return Object.fromEntries(systemSpecKeys.map((key) => [key, ['module_definitions', 'failure_modes', 'test_plan', 'acceptance_criteria'].includes(key) ? ['covered'] : { covered: true }]));
+  return Object.fromEntries(systemSpecKeys.map((key) => [key, ['module_definitions', 'component_backend_bindings', 'failure_modes', 'test_plan', 'acceptance_criteria'].includes(key) ? ['covered'] : { covered: true }]));
 }
 function makeSchemaOutput() {
   return {
     structured_schema: { instruction: 'directive', input_contract: { required_fields: [] }, output_contract: { response_fields: {} }, implementation_notes: [], final_instruction: 'instruction' },
+    component_backend_bindings: [{ ui_component: 'generate form', backend_action: '/api/generate/schema', request_contract: { goal_description: 'string' }, response_contract: { spec: 'object' }, auth_or_entitlement: 'authenticated and entitled', state_mutation: 'saved spec appended', persistence_target: 'specs table', errors_and_fallbacks: ['show validation error or unsaved output'] }],
     validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'],
     failure_modes: [{ condition: 'invalid input', user_cause: true, expected_system_behavior: 'return validation error' }],
     fallback_recovery_logic: [{ trigger: 'save failure', fallback: 'return unsaved output', recovery: 'copy or download output' }],
@@ -172,7 +173,7 @@ function mockFetch(url, options = {}) {
     assert.strictEqual(authHeader(options), 'Bearer deepseek-secret', 'generation uses DeepSeek server key');
     const body = readBody(options);
     const systemPrompt = String(body.messages && body.messages[0] && body.messages[0].content || '');
-    const output = systemPrompt.includes('structured_schema, validation_flags, failure_modes, fallback_recovery_logic, acceptance_criteria, meta_tag') ? makeSchemaOutput() : makeSpecOutput();
+    const output = systemPrompt.includes('structured_schema, component_backend_bindings, validation_flags, failure_modes, fallback_recovery_logic, acceptance_criteria, meta_tag') ? makeSchemaOutput() : makeSpecOutput();
     return Promise.resolve(json({ id: 'deepseek-request-1', choices: [{ message: { content: JSON.stringify(output) } }] }));
   }
 
@@ -244,6 +245,7 @@ function authed(options = {}) {
     assert.ok(generate.body.spec.output.failure_modes, 'system spec includes failure modes');
     assert.ok(generate.body.spec.output.fallback_recovery_logic, 'system spec includes fallback recovery logic');
     assert.ok(generate.body.spec.output.observability_support_logic, 'system spec includes observability/support logic');
+    assert.ok(generate.body.spec.output.component_backend_bindings, 'system spec includes UI/backend component bindings');
     assert.ok(generate.body.spec.output.acceptance_criteria, 'system spec includes acceptance criteria');
 
     const list = await request(base, '/api/specs', authed({ method: 'GET' }));
@@ -299,7 +301,8 @@ function authed(options = {}) {
     assert.strictEqual(schemaGenerate.response.status, 200, 'schema generate succeeds');
     assert.strictEqual(schemaGenerate.body.spec.type, 'schema', 'schema generation saves schema type');
     assert.strictEqual(schemaGenerate.body.spec.output.meta_tag, 'bndr_spex_merged_schema_v1', 'schema output has expected meta tag');
-    assert.deepStrictEqual(Object.keys(schemaGenerate.body.spec.output).sort(), ['acceptance_criteria', 'failure_modes', 'fallback_recovery_logic', 'meta_tag', 'structured_schema', 'validation_flags'], 'schema output has exact keys');
+    assert.deepStrictEqual(Object.keys(schemaGenerate.body.spec.output).sort(), ['acceptance_criteria', 'component_backend_bindings', 'failure_modes', 'fallback_recovery_logic', 'meta_tag', 'structured_schema', 'validation_flags'], 'schema output has exact keys');
+    assert.ok(schemaGenerate.body.spec.output.component_backend_bindings.length, 'schema output includes UI/backend component bindings');
     assert.ok(schemaGenerate.body.spec.output.fallback_recovery_logic.length, 'schema output includes fallback recovery logic');
     assert.strictEqual(profile.single_spec_credits, 0, 'schema generation consumes credit atomically on save');
 

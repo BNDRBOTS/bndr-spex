@@ -70,7 +70,7 @@ const outputModes = {
     outputLabel: 'SPEX',
     buttonLabel: 'Generate SPEX',
     busyLabel: 'Generating SPEX...',
-    description: 'Full build-ready technical specification with architecture, modules, APIs, data flow, fallback and recovery logic, validation, deployment, and a final reusable schema.',
+    description: 'Full build-ready technical specification with architecture, modules, APIs, UI/backend bindings, data flow, fallback and recovery logic, validation, deployment, and a final reusable schema.',
     placeholder: 'Describe the product, app, workflow, or system you want turned into a complete build-ready SPEX.'
   },
   schema: {
@@ -78,7 +78,7 @@ const outputModes = {
     outputLabel: 'Structured schema',
     buttonLabel: 'Generate Schema',
     busyLabel: 'Generating Schema...',
-    description: 'Reusable structured schema output with clear fields, validation flags, failure modes, fallback recovery logic, and a model-ready meta tag.',
+    description: 'Reusable structured schema output with clear fields, UI/backend bindings, validation flags, failure modes, fallback recovery logic, and a model-ready meta tag.',
     placeholder: 'Describe the product, app, workflow, or system you want turned into a reusable structured schema.'
   }
 };
