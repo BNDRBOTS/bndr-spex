@@ -29,13 +29,17 @@ const systemSpecKeys = [
   'ui_ux_spec',
   'payment_access_logic',
   'security_privacy_logic',
+  'failure_modes',
+  'fallback_recovery_logic',
+  'observability_support_logic',
   'deployment_strategy',
   'validation_logic',
   'test_plan',
+  'acceptance_criteria',
   'final_schema',
   'final_instruction'
 ];
-const schemaKeys = ['structured_schema', 'validation_flags', 'meta_tag'];
+const schemaKeys = ['structured_schema', 'validation_flags', 'failure_modes', 'fallback_recovery_logic', 'acceptance_criteria', 'meta_tag'];
 
 const publicEnv = {
   SUPABASE_URL: process.env.SUPABASE_URL || '',
@@ -306,27 +310,67 @@ function validateKeys(obj, requiredKeys) {
 }
 function expectedJsonExample(mode) {
   if (mode === 'schema') {
-    return JSON.stringify({ structured_schema: { instruction: 'directive', input: { context: {}, additional: {} }, output_format: { response_fields: {} }, final_instruction: 'instruction' }, validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'], meta_tag: 'bndr_spex_merged_schema_v1' }, null, 2);
+    return JSON.stringify({
+      structured_schema: {
+        instruction: 'directive',
+        input_contract: { required_fields: [], optional_fields: [], assumptions: [] },
+        output_contract: { response_fields: {}, types: {}, constraints: {} },
+        implementation_notes: [],
+        final_instruction: 'instruction'
+      },
+      validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'],
+      failure_modes: [{ condition: 'what can fail', user_cause: false, expected_system_behavior: 'specific behavior' }],
+      fallback_recovery_logic: [{ trigger: 'failure trigger', fallback: 'fallback behavior', recovery: 'recovery path' }],
+      acceptance_criteria: ['Specific, testable condition'],
+      meta_tag: 'bndr_spex_merged_schema_v1'
+    }, null, 2);
   }
-  return JSON.stringify(Object.fromEntries(systemSpecKeys.map((key) => [key, key.endsWith('_definitions') || key === 'test_plan' ? [] : {}])), null, 2);
+  return JSON.stringify(Object.fromEntries(systemSpecKeys.map((key) => {
+    if (key.endsWith('_definitions') || ['failure_modes', 'test_plan', 'acceptance_criteria'].includes(key)) return [key, []];
+    if (key === 'final_instruction') return [key, 'concise execution directive'];
+    return [key, {}];
+  })), null, 2);
 }
 function mergedSpexPrompt() {
   return [
     'BNDR | SPEX converts one plain-language product description into a complete build-ready system specification.',
     'The only customer input is goal_description. Derive every needed technical dimension internally unless it is explicitly stated inside that description.',
-    'Merge schema-standardization with end-to-end system-specification. Produce reusable JSON. Do not produce conversational advice.',
+    'Merge schema-standardization with end-to-end system-specification. Produce reusable JSON that a developer can implement without theatrical filler. Do not produce conversational advice.',
     'Derive runtime model, scope, platforms, constraints, dependencies, design requirements, data requirements, architecture, APIs, database and storage logic, auth, billing, UI states, deployment, validation, and testing from the description.',
+    'Include concrete graceful fallback and failsafe behavior for expected failure paths: invalid input, unauthenticated access, authorization failure, payment failure, provider/model timeout, provider/model invalid JSON, database read/write failure, save-after-generation failure, network failure, rate limiting, empty states, loading states, retry exhaustion, and user recovery paths.',
+    'Include observability and support handoff requirements: what should be logged, what must be redacted, what user-facing error is safe to show, when a developer notification is appropriate, and how support can reproduce the issue.',
     'Preserve the original description. Label inferred items as inferred. Put unclear items in open questions or validation requirements instead of inventing facts.',
+    'Every acceptance criterion and test item must be specific and objectively verifiable.',
     'Do not include server credentials, payment credentials, database admin credentials, webhook credentials, provider tokens, internal system text, or implementation secrets.',
     'Do not require the customer to know dependencies, integrations, runtime model, target platforms, database design, or API routes.',
     'Return strict JSON only. No markdown, code fences, or commentary.'
   ].join(' ');
 }
 function buildSystemPrompt() {
-  return [mergedSpexPrompt(), 'Return exactly these top-level keys and no others:', systemSpecKeys.join(', '), 'Populate every field with concrete build-relevant content.', 'final_schema must be a reusable schema representation of the derived system.', 'final_instruction must be a concise execution directive.'].join('\n\n');
+  return [
+    mergedSpexPrompt(),
+    'Return exactly these top-level keys and no others:',
+    systemSpecKeys.join(', '),
+    'Populate every field with concrete build-relevant content.',
+    'failure_modes must list realistic failure conditions, whether they are user-caused or system-caused, visible symptoms, and expected system behavior.',
+    'fallback_recovery_logic must map each important failure trigger to fallback behavior, retry/escape behavior, user messaging, and recovery path.',
+    'observability_support_logic must define logging, redaction, developer notification, support contact, and reproduction context requirements.',
+    'acceptance_criteria must be a list of specific pass/fail checks that prove the spec is complete.',
+    'final_schema must be a reusable schema representation of the derived system, including required fields, optional fields, validations, fallback rules, and output contract.',
+    'final_instruction must be a concise execution directive.'
+  ].join('\n\n');
 }
 function buildSchemaPrompt() {
-  return [mergedSpexPrompt(), 'Return exactly these top-level keys and no others: structured_schema, validation_flags, meta_tag.', 'meta_tag must be bndr_spex_merged_schema_v1.'].join('\n\n');
+  return [
+    mergedSpexPrompt(),
+    'Return exactly these top-level keys and no others:',
+    schemaKeys.join(', '),
+    'structured_schema must include input_contract, output_contract, implementation_notes, and final_instruction.',
+    'failure_modes must list schema-level validation, runtime, persistence, integration, and user recovery failures.',
+    'fallback_recovery_logic must map schema validation and runtime failures to concrete fallback and recovery behavior.',
+    'acceptance_criteria must be testable conditions proving the schema is complete and reusable.',
+    'meta_tag must be bndr_spex_merged_schema_v1.'
+  ].join('\n\n');
 }
 function deepSeekPrompt(mode) { return [(mode === 'schema' ? buildSchemaPrompt() : buildSystemPrompt()), 'Expected JSON shape:', expectedJsonExample(mode)].join('\n\n'); }
 function parseModelJson(content) {

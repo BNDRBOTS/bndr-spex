@@ -103,6 +103,8 @@ The smoke test uses local process environment values that are intentionally fake
 - The browser receives only `SUPABASE_URL`, `SUPABASE_ANON_KEY`, display prices, and app name through `/env.js`.
 - Server secrets stay server-side: `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET` are never written to public assets.
 - Generation does not use local storage or browser-side persistence. Specs are saved through server-side Supabase REST calls.
+- Generated System SPEX output is contractually required to include failure modes, fallback/recovery logic, observability/support requirements, validation, test plan, acceptance criteria, and a reusable final schema.
+- Generated Structured Schema output is contractually required to include validation flags, failure modes, fallback/recovery logic, acceptance criteria, and the `bndr_spex_merged_schema_v1` meta tag.
 - One-off credits are consumed atomically with spec saving through the `save_spec_with_credit` RPC.
 - Checkout credit grants are idempotent through `grant_spec_credit_once`, so webhook and return-page recovery cannot double-grant the same Checkout Session.
 - Stripe webhook events are idempotent through `record_billing_event_once`; failed sync attempts release their marker so Stripe retries can repair billing state.

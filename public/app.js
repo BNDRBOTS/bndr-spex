@@ -70,7 +70,7 @@ const outputModes = {
     outputLabel: 'SPEX',
     buttonLabel: 'Generate SPEX',
     busyLabel: 'Generating SPEX...',
-    description: 'Full build-ready technical specification with architecture, modules, APIs, data flow, validation logic, deployment, and a final reusable schema.',
+    description: 'Full build-ready technical specification with architecture, modules, APIs, data flow, fallback and recovery logic, validation, deployment, and a final reusable schema.',
     placeholder: 'Describe the product, app, workflow, or system you want turned into a complete build-ready SPEX.'
   },
   schema: {
@@ -78,7 +78,7 @@ const outputModes = {
     outputLabel: 'Structured schema',
     buttonLabel: 'Generate Schema',
     busyLabel: 'Generating Schema...',
-    description: 'Reusable structured schema output with clear fields, validation flags, and a model-ready meta tag.',
+    description: 'Reusable structured schema output with clear fields, validation flags, failure modes, fallback recovery logic, and a model-ready meta tag.',
     placeholder: 'Describe the product, app, workflow, or system you want turned into a reusable structured schema.'
   }
 };
@@ -345,7 +345,7 @@ function renderAccount(data) {
     expired: 'No active paid access. Buy one SPEX or subscribe monthly.'
   };
   const email = data.user && data.user.email || '';
-  els.accountLabel.textContent = accountInitial(email);
+  els.accountLabel.textContent = email || 'Account';
   els.accountLabel.title = email || 'Account';
   if (els.settingsEmail) els.settingsEmail.textContent = email || 'Account';
   els.planStatus.dataset.accessState = access.state;
@@ -561,10 +561,10 @@ async function init() {
   setMode('system');
   await requireSession();
   els.form.addEventListener('submit', generate);
-  els.railGenerate.addEventListener('click', () => els.goal.focus());
-  els.railBilling.addEventListener('click', () => els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-  els.railSettings.addEventListener('click', openSettingsModal);
-  els.accountLabel.addEventListener('click', openSettingsModal);
+  if (els.railGenerate) els.railGenerate.addEventListener('click', () => els.goal.focus());
+  if (els.railBilling) els.railBilling.addEventListener('click', () => els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  if (els.railSettings) els.railSettings.addEventListener('click', openSettingsModal);
+  if (els.accountLabel) els.accountLabel.addEventListener('click', openSettingsModal);
   els.modeSystem.addEventListener('click', () => setMode('system'));
   els.modeSchema.addEventListener('click', () => setMode('schema'));
   els.buySingle.addEventListener('click', () => startCheckout('single', els.buySingle));
