@@ -60,9 +60,8 @@ const mimeTypes = {
   '.txt': 'text/plain; charset=utf-8'
 };
 
-function writePublicEnv() {
-  fs.mkdirSync(PUBLIC_DIR, { recursive: true });
-  fs.writeFileSync(path.join(PUBLIC_DIR, 'env.js'), `window.HD_ENV = ${JSON.stringify(publicEnv)};\n`, 'utf8');
+function publicEnvScript() {
+  return `window.HD_ENV = ${JSON.stringify(publicEnv)};\n`;
 }
 function envValue(primary, aliases = []) {
   for (const key of [primary, ...aliases]) {
@@ -321,7 +320,7 @@ function expectedJsonExample(mode) {
       },
       component_backend_bindings: [{
         ui_component: 'screen, control, form, or state',
-        backend_action: 'route, RPC, service, or explicit inferred requirement',
+        backend_action: 'route, RPC, service, or explicit derived requirement',
         request_contract: {},
         response_contract: {},
         auth_or_entitlement: 'required access condition',
@@ -350,10 +349,10 @@ function mergedSpexPrompt() {
     'Merge schema-standardization with end-to-end system-specification. Produce reusable JSON that a developer can implement without theatrical filler. Do not produce conversational advice.',
     'Derive runtime model, scope, platforms, constraints, dependencies, design requirements, data requirements, architecture, APIs, database and storage logic, auth, billing, UI states, deployment, validation, and testing from the description.',
     'Assign UI components to matching backend responsibilities. For every screen, form, navigation control, primary CTA, generated output surface, saved-item surface, settings/support surface, billing/payment surface, loading state, empty state, and error state, map the UI component to backend route/action/service, request payload, response shape, auth or entitlement requirement, client/server state mutation, persistence target, and fallback behavior.',
-    'UI labels, component names, API routes, database entities, and payment/account concepts must be internally consistent. If a route, table, event, or service is inferred rather than supplied, label it inferred and include a validation requirement instead of pretending it already exists.',
+    'UI labels, component names, API routes, database entities, and payment/account concepts must be internally consistent. If a route, table, event, or service is derived rather than supplied, mark it as a derived requirement and include a validation requirement instead of pretending it already exists.',
     'Include concrete graceful fallback and failsafe behavior for expected failure paths: invalid input, unauthenticated access, authorization failure, payment failure, provider/model timeout, provider/model invalid JSON, database read/write failure, save-after-generation failure, network failure, rate limiting, empty states, loading states, retry exhaustion, and user recovery paths.',
     'Include observability and support handoff requirements: what should be logged, what must be redacted, what user-facing error is safe to show, when a developer notification is appropriate, and how support can reproduce the issue.',
-    'Preserve the original description. Label inferred items as inferred. Put unclear items in open questions or validation requirements instead of inventing facts.',
+    'Preserve the original description. Separate confirmed inputs from derived assumptions. Put unclear items in open questions or validation requirements instead of inventing facts.',
     'Every acceptance criterion and test item must be specific and objectively verifiable.',
     'Do not include server credentials, payment credentials, database admin credentials, webhook credentials, provider tokens, internal system text, or implementation secrets.',
     'Do not require the customer to know dependencies, integrations, runtime model, target platforms, database design, or API routes.',
@@ -727,6 +726,7 @@ async function portalHandler(req, res) {
 async function route(req, res) {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsed.pathname;
+  if (req.method === 'GET' && pathname === '/env.js') return send(res, 200, publicEnvScript(), { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
   if (req.method === 'GET' && pathname === '/api/health') return send(res, 200, { status: 'ok', config: configStatus() });
   if (req.method === 'POST' && pathname === '/api/stripe/webhook') return handleStripeWebhook(req, res);
   if (req.method === 'GET' && pathname === '/api/me') return meHandler(req, res);
@@ -745,7 +745,6 @@ async function route(req, res) {
   if (req.method === 'GET') return serveStatic(req, res, pathname);
   send(res, 405, { error: 'Method not allowed' });
 }
-writePublicEnv();
 const server = http.createServer(async (req, res) => {
   try { await route(req, res); } catch (error) {
     const status = error.status || 500;
