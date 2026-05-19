@@ -5,6 +5,32 @@ const crypto = require('crypto');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const loadedEnvFiles = [];
+
+function parseEnvLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+  const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+  if (!match) return null;
+  let value = match[2].trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+  return [match[1], value];
+}
+function loadEnvFile(filename) {
+  const filePath = path.join(ROOT, filename);
+  if (!fs.existsSync(filePath)) return;
+  const text = fs.readFileSync(filePath, 'utf8');
+  for (const line of text.split(/\r?\n/)) {
+    const entry = parseEnvLine(line);
+    if (!entry) continue;
+    const [key, value] = entry;
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+  loadedEnvFiles.push(filename);
+}
+loadEnvFile('.env.local');
+loadEnvFile('.env');
+
 const MAX_BODY_BYTES = 1024 * 1024;
 const STRIPE_API = 'https://api.stripe.com/v1';
 const DEFAULT_TIMEOUT_MS = Number(process.env.OUTBOUND_TIMEOUT_MS || 45000);
@@ -83,7 +109,7 @@ function configStatus() {
   }
   if (!stripeSinglePriceId()) missing.push('STRIPE_SINGLE_PRICE_ID');
   if (!stripeMonthlyPriceId()) missing.push('STRIPE_MONTHLY_PRICE_ID');
-  return { ok: missing.length === 0, missing };
+  return { ok: missing.length === 0, missing, loaded_env_files: loadedEnvFiles };
 }
 function securityHeaders(contentType) {
   return {
