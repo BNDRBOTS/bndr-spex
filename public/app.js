@@ -63,6 +63,20 @@ const els = {
 const billingModalActions = { primary: null, secondary: null };
 const supportEmail = 'support@bndrllc.com';
 const userErrorStatuses = new Set([400, 401, 402, 403, 404, 409, 422]);
+const laneButtons = Array.from(document.querySelectorAll('[data-lane-target]'));
+const lanePanels = Array.from(document.querySelectorAll('[data-lane-panel]'));
+const lanes = new Set(['compiler', 'library', 'access']);
+
+function setLane(lane, options = {}) {
+  const nextLane = lanes.has(lane) ? lane : 'compiler';
+  const workspace = document.querySelector('.spex-workspace');
+  if (workspace) workspace.dataset.activeLane = nextLane;
+  lanePanels.forEach((panel) => panel.classList.toggle('active', panel.dataset.lanePanel === nextLane));
+  laneButtons.forEach((button) => button.classList.toggle('active', button.dataset.laneTarget === nextLane));
+  if (nextLane === 'compiler' && options.focus !== false && els.goal) {
+    requestAnimationFrame(() => els.goal.focus({ preventScroll: true }));
+  }
+}
 
 const outputModes = {
   system: {
@@ -561,8 +575,12 @@ async function init() {
   setMode('system');
   await requireSession();
   els.form.addEventListener('submit', generate);
-  if (els.railGenerate) els.railGenerate.addEventListener('click', () => els.goal.focus());
-  if (els.railBilling) els.railBilling.addEventListener('click', () => els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  setLane('compiler', { focus: false });
+  if (els.railGenerate) els.railGenerate.addEventListener('click', () => setLane('compiler'));
+  if (els.railBilling) els.railBilling.addEventListener('click', async () => {
+    setLane('access', { focus: false });
+    await safeRun(loadAccount, 'Account status could not refresh.');
+  });
   if (els.railSettings) els.railSettings.addEventListener('click', openSettingsModal);
   if (els.accountLabel) els.accountLabel.addEventListener('click', openSettingsModal);
   els.modeSystem.addEventListener('click', () => setMode('system'));
@@ -572,16 +590,19 @@ async function init() {
   els.portal.addEventListener('click', openPortal);
   els.billingClose.addEventListener('click', closeBillingModal);
   els.settingsClose.addEventListener('click', closeSettingsModal);
-  els.settingsBilling.addEventListener('click', () => { closeSettingsModal(); els.paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  els.settingsBilling.addEventListener('click', async () => {
+    closeSettingsModal();
+    setLane('access', { focus: false });
+    await safeRun(loadAccount, 'Account status could not refresh.');
+  });
   els.settingsSignout.addEventListener('click', signOut);
   els.settingsModal.addEventListener('click', (event) => { if (event.target === els.settingsModal) closeSettingsModal(); });
   els.billingPrimary.addEventListener('click', () => runBillingAction(billingModalActions.primary));
   els.billingSecondary.addEventListener('click', () => runBillingAction(billingModalActions.secondary));
   els.billingModal.addEventListener('click', (event) => { if (event.target === els.billingModal) closeBillingModal(); });
   els.refresh.addEventListener('click', async () => {
-    await safeRun(loadAccount, 'Account status could not refresh.');
+    setLane('library', { focus: false });
     await safeRun(loadSpecs, 'Saved SPEX could not refresh.');
-    toast('Refreshed.');
   });
   els.deleteSpec.addEventListener('click', deleteSelected);
   els.renameInput.addEventListener('change', renameSelected);

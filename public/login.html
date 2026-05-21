@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <meta name="description" content="Secure authentication gateway for BNDR | SPEX.">
   <title>Login - BNDR | SPEX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;500;700&family=Syncopate:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bndr-bg: #151519;
@@ -324,6 +327,229 @@
     .message:empty {
       display: none;
     }
+
+
+    /* Locked BNDR reference login skin: visual-only, real auth hooks preserved. */
+    :root {
+      --bg-base: #181818;
+      --bg-top: #1e1e1e;
+      --shell: rgba(35,35,35,.86);
+      --well: rgba(0,0,0,.30);
+      --outer-top: rgba(255,255,255,.15);
+      --outer-left: rgba(255,255,255,.08);
+      --outer-dark: rgba(0,0,0,.82);
+      --inner-border: rgba(255,255,255,.05);
+      --text-main: #f0f0f0;
+      --text-muted: #9b9b9b;
+      --text-dim: #686868;
+      --accent: #d4ff00;
+      --accent-dim: rgba(212,255,0,.08);
+      --accent-glow: 0 0 24px rgba(212,255,0,.28);
+      --error: #ff3b30;
+      --error-dim: rgba(255,59,48,.12);
+      --shadow-shell: 0 30px 60px rgba(0,0,0,.60), inset 0 1px 0 rgba(255,255,255,.08), inset 0 20px 40px rgba(255,255,255,.02);
+      --shadow-well: inset 0 5px 20px rgba(0,0,0,.5);
+      --ease: cubic-bezier(.19,1,.22,1);
+      --font-display: 'Syncopate', sans-serif;
+      --font-body: 'Space Grotesk', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --bndr-bg: var(--bg-base);
+      --bndr-surface: var(--shell);
+      --bndr-surface-hover: rgba(255,255,255,.07);
+      --bndr-surface-inset: var(--well);
+      --bndr-border: rgba(255,255,255,.12);
+      --bndr-border-focus: rgba(212,255,0,.42);
+      --bndr-fg: var(--text-main);
+      --bndr-fg-muted: var(--text-muted);
+      --bndr-fg-subtle: var(--text-dim);
+      --bndr-accent: var(--accent);
+      --bndr-accent-invert: #111;
+      --radius-sm: 2px;
+      --radius-md: 4px;
+      --radius-lg: 4px;
+      --ease-clinical: var(--ease);
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, var(--bg-top) 0%, var(--bg-base) 58%, #151515 100%);
+      color: var(--text-main);
+      font-family: var(--font-body);
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.02) 0%, rgba(255,255,255,0) 22%, rgba(0,0,0,0) 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .site-header {
+      position: fixed;
+      height: 70px;
+      padding: 0 4vw;
+      background: rgba(24,24,24,.94);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+
+    .brand {
+      font-family: var(--font-display);
+      font-size: 18px;
+      letter-spacing: .08em;
+      gap: 8px;
+    }
+
+    .brand span {
+      color: var(--accent);
+      text-shadow: 0 0 10px rgba(212,255,0,.35);
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      margin-top: 0;
+      padding: 94px 24px 24px;
+    }
+
+    .login-panel {
+      max-width: 460px;
+      background: var(--shell);
+      border-top: 1px solid var(--outer-top);
+      border-left: 1px solid var(--outer-left);
+      border-right: 1px solid var(--outer-dark);
+      border-bottom: 1px solid var(--outer-dark);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-shell);
+      position: relative;
+    }
+
+    .login-panel::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 9%, rgba(255,255,255,0) 18%);
+      pointer-events: none;
+    }
+
+    .login-panel > * { position: relative; z-index: 1; }
+
+    .panel-bar {
+      background: rgba(28,28,28,.82);
+      border-bottom-color: var(--inner-border);
+      font-family: var(--font-mono);
+      letter-spacing: .18em;
+      color: var(--text-dim);
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      text-transform: uppercase;
+      letter-spacing: -.04em;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .subtitle { color: var(--text-muted); }
+
+    label,
+    .divider span {
+      font-family: var(--font-mono);
+      letter-spacing: .18em;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .forgot-link { color: var(--text-muted); }
+    .forgot-link:hover { color: var(--accent); text-shadow: 0 0 10px rgba(212,255,0,.24); }
+
+    input[type='email'],
+    input[type='password'] {
+      height: 52px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: var(--well);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      box-shadow: var(--shadow-well);
+    }
+
+    input[type='email']:focus,
+    input[type='password']:focus {
+      border-color: rgba(212,255,0,.42);
+      background: rgba(212,255,0,.02);
+      box-shadow: 0 0 0 1px rgba(212,255,0,.18), 0 0 18px rgba(212,255,0,.08), var(--shadow-well);
+    }
+
+    input::placeholder { color: #7d7d7d; }
+
+    .button {
+      height: 44px;
+      border-radius: 2px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.03);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      position: relative;
+      overflow: hidden;
+      transition: transform .35s var(--ease), box-shadow .35s var(--ease), background .35s var(--ease), border-color .35s var(--ease), color .35s var(--ease);
+    }
+
+    .button::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,.11) 48%, transparent 100%);
+      transform: translateX(-130%);
+      transition: transform .6s var(--ease);
+      pointer-events: none;
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+      background: rgba(255,255,255,.08);
+      border-color: rgba(255,255,255,.28);
+      box-shadow: 0 10px 20px rgba(0,0,0,.28);
+    }
+
+    .button:hover::before { transform: translateX(130%); }
+    .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .button-lux {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+      box-shadow: 0 0 0 1px rgba(212,255,0,.12), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+
+    .button-lux:hover {
+      background: var(--accent);
+      color: #111;
+      box-shadow: var(--accent-glow);
+    }
+
+    .button-secondary { background: rgba(255,255,255,.03); color: var(--text-main); }
+
+    .divider::before,
+    .divider::after { border-bottom-color: rgba(255,255,255,.10); }
+
+    .create-account-prompt p { color: var(--text-muted); }
+
+    .message {
+      border-radius: 2px;
+      border-color: rgba(255,59,48,.40);
+      background: var(--error-dim);
+      color: #ff8f87;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .04em;
+    }
+
   </style>
 </head>
 <body>
