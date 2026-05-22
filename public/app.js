@@ -1,6 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
 const env = window.HD_ENV || {};
+const GENERATION_TIMEOUT_MS = Number(env.GENERATION_CLIENT_TIMEOUT_MS || 300000);
 const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co', env.SUPABASE_ANON_KEY || 'missing');
 
 let session = null;
@@ -257,7 +258,8 @@ function completeProgress(mode = currentMode, saved = true) {
 }
 function failProgress(label) {
   const elapsed = Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1000));
-  setProgress(100, label, elapsed);
+  const currentPercent = Number(String(els.progressPercent.textContent || '').replace('%', '')) || 0;
+  setProgress(Math.min(96, Math.max(12, currentPercent)), label, elapsed);
   clearInterval(progressTimer);
   progressTimer = null;
 }
@@ -419,7 +421,7 @@ async function generate(event) {
   currentOutput = null;
   currentOutputType = mode;
   try {
-    const data = await api(config.route, { method: 'POST', body: JSON.stringify(body), timeoutMs: 180000 });
+    const data = await api(config.route, { method: 'POST', body: JSON.stringify(body), timeoutMs: GENERATION_TIMEOUT_MS });
     currentOutput = data.spec.output;
     completeProgress(mode, data.saved !== false);
     if (data.saved === false) {

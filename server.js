@@ -33,11 +33,19 @@ loadEnvFile('.env');
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const STRIPE_API = 'https://api.stripe.com/v1';
-const DEFAULT_TIMEOUT_MS = Number(process.env.OUTBOUND_TIMEOUT_MS || 45000);
-const SUPABASE_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS || 15000);
-const STRIPE_TIMEOUT_MS = Number(process.env.STRIPE_TIMEOUT_MS || 20000);
-const DEEPSEEK_TIMEOUT_MS = Number(process.env.DEEPSEEK_TIMEOUT_MS || 165000);
-const SERVER_REQUEST_TIMEOUT_MS = Number(process.env.SERVER_REQUEST_TIMEOUT_MS || 190000);
+function envNumber(name, fallback, options = {}) {
+  const raw = Number(process.env[name]);
+  let value = Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  if (Number.isFinite(options.min)) value = Math.max(value, options.min);
+  if (Number.isFinite(options.max)) value = Math.min(value, options.max);
+  return value;
+}
+const DEFAULT_TIMEOUT_MS = envNumber('OUTBOUND_TIMEOUT_MS', 45000);
+const SUPABASE_TIMEOUT_MS = envNumber('SUPABASE_TIMEOUT_MS', 15000);
+const STRIPE_TIMEOUT_MS = envNumber('STRIPE_TIMEOUT_MS', 20000);
+const DEEPSEEK_TIMEOUT_MS = envNumber('DEEPSEEK_TIMEOUT_MS', 260000, { min: 240000, max: 420000 });
+const GENERATION_CLIENT_TIMEOUT_MS = envNumber('GENERATION_CLIENT_TIMEOUT_MS', DEEPSEEK_TIMEOUT_MS + 45000, { min: DEEPSEEK_TIMEOUT_MS + 30000, max: 480000 });
+const SERVER_REQUEST_TIMEOUT_MS = envNumber('SERVER_REQUEST_TIMEOUT_MS', GENERATION_CLIENT_TIMEOUT_MS + 30000, { min: GENERATION_CLIENT_TIMEOUT_MS + 15000, max: 540000 });
 const ACCOUNT_RETRY_ATTEMPTS = Number(process.env.ACCOUNT_RETRY_ATTEMPTS || 1);
 const BILLING_RETRY_ATTEMPTS = Number(process.env.BILLING_RETRY_ATTEMPTS || 1);
 const OUTBOUND_RETRY_DELAY_MS = Number(process.env.OUTBOUND_RETRY_DELAY_MS || 300);
@@ -75,6 +83,7 @@ const publicEnv = {
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
   PRICE_SINGLE_DISPLAY: process.env.PRICE_SINGLE_DISPLAY || '$7',
   PRICE_MONTHLY_DISPLAY: process.env.PRICE_MONTHLY_DISPLAY || '$9/mo',
+  GENERATION_CLIENT_TIMEOUT_MS,
   APP_NAME: process.env.APP_NAME || 'BNDR | SPEX'
 };
 
