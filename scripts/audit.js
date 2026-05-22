@@ -92,6 +92,8 @@ const appChecks = [
   ['spex2 workspace shell is styled', /class="spex-body spex2-shell"/.test(appHtml) && /\.spex2-shell[\s\S]*\.spex-workspace[\s\S]*grid-template-columns/.test(styles) && /\.col-right[\s\S]*overflow-y:\s*auto/.test(styles)],
   ['truthful access labels', /paid[\s\S]*trial[\s\S]*credit[\s\S]*past_due[\s\S]*expired/.test(appJs)],
   ['customer action fallbacks', /safeRun[\s\S]*safeRedirect[\s\S]*Clipboard unavailable/.test(appJs)],
+  ['stale session refresh retry', /refreshSessionForApi[\s\S]*supabase\.auth\.refreshSession[\s\S]*response\.status === 401[\s\S]*attempt === 0[\s\S]*return api/.test(appJs)],
+  ['billing buttons reset on checkout failure', /resetBillingButtons[\s\S]*setButtonBusy\(els\.buySingle, false\)[\s\S]*startCheckout[\s\S]*catch[\s\S]*resetBillingButtons/.test(appJs)],
   ['checkout return recovery', /recoverCheckoutReturn[\s\S]*\/api\/billing\/confirm/.test(appJs)],
   ['unsaved generation fallback shown', /data\.saved === false[\s\S]*Download or copy/.test(appJs)],
   ['login errors sanitized', /cleanAuthMessage[\s\S]*Email or password is incorrect/.test(html)]

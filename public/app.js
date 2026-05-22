@@ -270,11 +270,21 @@ async function requireSession() {
   session = result.data.session;
   if (!session) window.location.href = '/login.html';
 }
+async function refreshSessionForApi() {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) throw new Error('Sign-in is not connected.');
+  const result = await supabase.auth.refreshSession();
+  if (result.error || !result.data.session) {
+    session = null;
+    throw Object.assign(new Error('Please sign in again.'), { status: 401, data: { error: 'Please sign in again.' } });
+  }
+  session = result.data.session;
+  return session;
+}
 function accountInitial(email) {
   const source = String(email || '').trim();
   return source ? source[0].toUpperCase() : '?';
 }
-async function api(route, options = {}) {
+async function api(route, options = {}, attempt = 0) {
   if (!session) await requireSession();
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs || 45000;
@@ -289,6 +299,10 @@ async function api(route, options = {}) {
       const error = new Error(data.error || `Request failed: ${response.status}`);
       error.status = response.status;
       error.data = data;
+      if (response.status === 401 && attempt === 0) {
+        await refreshSessionForApi();
+        return api(route, options, attempt + 1);
+      }
       throw error;
     }
     return data;
@@ -328,9 +342,15 @@ function setBusy(isBusy, mode = currentMode) {
   els.generateButton.textContent = isBusy ? config.busyLabel : modeConfig(currentMode).buttonLabel;
 }
 function setButtonBusy(button, isBusy, text) {
+  if (!button) return;
   if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
   button.disabled = isBusy;
   button.textContent = isBusy ? text : button.dataset.originalText;
+}
+function resetBillingButtons() {
+  setButtonBusy(els.buySingle, false);
+  setButtonBusy(els.buyMonthly, false);
+  setButtonBusy(els.portal, false);
 }
 function deriveAccess(profile, data = {}) {
   if (data.access && data.access.state) return data.access;
@@ -457,7 +477,7 @@ async function startCheckout(plan, button) {
     if (!data.url) throw new Error('Checkout did not return a recovery link.');
     safeRedirect(data.url, 'Checkout could not open');
   } catch (error) {
-    setButtonBusy(button, false);
+    resetBillingButtons();
     const notifyDeveloper = !isUserError(error);
     showBillingModal('Checkout could not open', cleanErrorMessage(error, 'Checkout could not open. Please try again.'), {
       primaryLabel: 'Try again',
@@ -476,7 +496,7 @@ async function openPortal() {
     if (data.mode === 'checkout') toast('Opening checkout to recover billing.');
     safeRedirect(data.url, 'Billing could not open');
   } catch (error) {
-    setButtonBusy(els.portal, false);
+    resetBillingButtons();
     const notifyDeveloper = !isUserError(error);
     showBillingModal('Billing could not open', cleanErrorMessage(error, 'Billing could not open. Please try again.'), {
       primaryLabel: 'Open subscription checkout',
