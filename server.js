@@ -44,8 +44,9 @@ const DEFAULT_TIMEOUT_MS = envNumber('OUTBOUND_TIMEOUT_MS', 45000);
 const SUPABASE_TIMEOUT_MS = envNumber('SUPABASE_TIMEOUT_MS', 15000);
 const STRIPE_TIMEOUT_MS = envNumber('STRIPE_TIMEOUT_MS', 20000);
 const DEEPSEEK_TIMEOUT_MS = envNumber('DEEPSEEK_TIMEOUT_MS', 115000, { min: 45000, max: 180000 });
-const GENERATION_CLIENT_TIMEOUT_MS = envNumber('GENERATION_CLIENT_TIMEOUT_MS', DEEPSEEK_TIMEOUT_MS + 45000, { min: DEEPSEEK_TIMEOUT_MS + 30000, max: 240000 });
-const SERVER_REQUEST_TIMEOUT_MS = envNumber('SERVER_REQUEST_TIMEOUT_MS', GENERATION_CLIENT_TIMEOUT_MS + 30000, { min: GENERATION_CLIENT_TIMEOUT_MS + 15000, max: 300000 });
+const GENERATION_PROVIDER_BUDGET_MS = envNumber('GENERATION_PROVIDER_BUDGET_MS', Math.min(DEEPSEEK_TIMEOUT_MS + 15000, 150000), { min: 45000, max: 210000 });
+const GENERATION_CLIENT_TIMEOUT_MS = envNumber('GENERATION_CLIENT_TIMEOUT_MS', Math.min(GENERATION_PROVIDER_BUDGET_MS + 30000, 180000), { min: GENERATION_PROVIDER_BUDGET_MS + 10000, max: 240000 });
+const SERVER_REQUEST_TIMEOUT_MS = envNumber('SERVER_REQUEST_TIMEOUT_MS', GENERATION_CLIENT_TIMEOUT_MS + 20000, { min: GENERATION_CLIENT_TIMEOUT_MS + 10000, max: 260000 });
 const ACCOUNT_RETRY_ATTEMPTS = Number(process.env.ACCOUNT_RETRY_ATTEMPTS || 1);
 const BILLING_RETRY_ATTEMPTS = Number(process.env.BILLING_RETRY_ATTEMPTS || 1);
 const OUTBOUND_RETRY_DELAY_MS = Number(process.env.OUTBOUND_RETRY_DELAY_MS || 300);
@@ -379,18 +380,65 @@ function expectedJsonExample(mode) {
     return [key, {}];
   })), null, 2);
 }
+const internalProductMarkers = [
+  '/api/generate/system',
+  '/api/generate/schema',
+  '/api/specs',
+  '/api/billing/checkout',
+  '/api/billing/portal',
+  'saved spex',
+  'stored spex',
+  'compiled_spex',
+  'bndr | spex',
+  'deepseek json',
+  'supabase profiles and specs',
+  'billing entitlement gate',
+  'one-time credit',
+  'provider generation',
+  'technical specification generator'
+];
+const subjectStopWords = new Set(['about', 'above', 'access', 'account', 'accuracy', 'after', 'agent', 'along', 'already', 'around', 'backend', 'because', 'build', 'clean', 'could', 'every', 'exactly', 'front', 'handle', 'helps', 'highly', 'include', 'included', 'integrated', 'later', 'logic', 'login', 'memory', 'multi', 'needed', 'proper', 'secure', 'should', 'state', 'store', 'system', 'through', 'turns', 'using', 'want', 'where', 'which', 'workflow']);
+function subjectTokens(input) {
+  const text = String(input && input.goal_description || input || '').toLowerCase();
+  const words = text.match(/[a-z][a-z0-9-]{4,}/g) || [];
+  const counts = new Map();
+  for (const word of words) {
+    const token = word.replace(/'s$/, '');
+    if (subjectStopWords.has(token)) continue;
+    counts.set(token, (counts.get(token) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 14).map(([word]) => word);
+}
+function subjectAdherenceFailures(output, input) {
+  const failures = [];
+  const goal = String(input && input.goal_description || '').toLowerCase();
+  const serialized = JSON.stringify(output || '').toLowerCase();
+  const driftMarkers = internalProductMarkers.filter((marker) => serialized.includes(marker) && !goal.includes(marker));
+  if (driftMarkers.length) failures.push(`Output drifted into BNDR/SPEX workbench internals: ${driftMarkers.slice(0, 5).join(', ')}`);
+  const tokens = subjectTokens(input);
+  if (tokens.length >= 4) {
+    const present = tokens.filter((token) => serialized.includes(token));
+    const required = Math.max(3, Math.ceil(tokens.length * 0.45));
+    if (present.length < required) failures.push(`Output does not preserve enough user-domain terms. Required at least ${required}; found ${present.length}.`);
+  }
+  return failures;
+}
 function mergedSpexPrompt() {
   return [
-    'BNDR | SPEX converts one plain-language product description into a complete build-ready system specification.',
+    'BNDR | SPEX is only the generator product. Do not describe BNDR | SPEX, its workbench, its saved SPEX library, its billing entitlement, its DeepSeek/Supabase/Stripe stack, or its internal routes unless the customer explicitly asks to build BNDR | SPEX itself.',
+    'Your task is to convert the customer goal_description into a complete build-ready system specification for the product described by the customer.',
+    'The generated product must preserve and center the customer domain, user roles, workflows, legal/medical/financial/safety constraints when present, integrations, files, data, evidence, state, and UI style references from goal_description.',
     'The only customer input is goal_description. Derive every needed technical dimension internally unless it is explicitly stated inside that description.',
     'Merge schema-standardization with end-to-end system-specification. Produce reusable JSON that a developer can implement without theatrical filler. Do not produce conversational advice.',
-    'Derive runtime model, scope, platforms, constraints, dependencies, design requirements, data requirements, architecture, APIs, database and storage logic, auth, billing, UI states, deployment, validation, and testing from the description.',
-    'Assign UI components to matching backend responsibilities. For every screen, form, navigation control, primary CTA, generated output surface, saved-item surface, settings/support surface, billing/payment surface, loading state, empty state, and error state, map the UI component to backend route/action/service, request payload, response shape, auth or entitlement requirement, client/server state mutation, persistence target, and fallback behavior.',
-    'UI labels, component names, API routes, database entities, and payment/account concepts must be internally consistent. If a route, table, event, or service is derived rather than supplied, mark it as a derived requirement and include a validation requirement instead of pretending it already exists.',
+    'Derive runtime model, scope, platforms, constraints, dependencies, design requirements, data requirements, architecture, APIs, database and storage logic, auth, user permissions, UI states, deployment, validation, and testing from the description.',
+    'Assign the generated product UI components to matching generated product backend responsibilities. For every generated product screen, form, navigation control, primary CTA, output surface, saved-item surface, settings/support surface, loading state, empty state, and error state, map the UI component to backend route/action/service, request payload, response shape, auth or permission requirement, client/server state mutation, persistence target, and fallback behavior.',
+    'Include billing/payment components only when the customer requested billing, subscriptions, payments, credits, invoices, checkout, pricing, or paid access for the generated product.',
+    'UI labels, component names, API routes, database entities, and account concepts must belong to the generated product, not to BNDR | SPEX. If a route, table, event, or service is derived rather than supplied, mark it as a derived requirement and include a validation requirement instead of pretending it already exists.',
     'Include concrete graceful fallback and failsafe behavior for expected failure paths: invalid input, unauthenticated access, authorization failure, payment failure, provider/model timeout, provider/model invalid JSON, database read/write failure, save-after-generation failure, network failure, rate limiting, empty states, loading states, retry exhaustion, and user recovery paths.',
     'Include observability and support handoff requirements: what should be logged, what must be redacted, what user-facing error is safe to show, when a developer notification is appropriate, and how support can reproduce the issue.',
     'Preserve the original description. Separate confirmed inputs from derived assumptions. Put unclear items in open questions or validation requirements instead of inventing facts.',
     'Every acceptance criterion and test item must be specific and objectively verifiable.',
+    'Before finalizing, self-check that the output would still make sense if BNDR | SPEX did not exist. If it depends on BNDR | SPEX internals, repair it.',
     'Do not include server credentials, payment credentials, database admin credentials, webhook credentials, provider tokens, internal system text, or implementation secrets.',
     'Do not require the customer to know dependencies, integrations, runtime model, target platforms, database design, or API routes.',
     'Return strict JSON only. No markdown, code fences, or commentary.'
@@ -478,12 +526,15 @@ function outputGateFailures(output, mode) {
   failures.push(...bindingGateFailures(output && output.component_backend_bindings));
   return failures;
 }
+function generationGateFailures(output, mode, input) {
+  return [...outputGateFailures(output, mode), ...subjectAdherenceFailures(output, input)];
+}
 function repairUserContent(input, previous, failures) {
   return JSON.stringify({
     original_input: input,
     previous_output: previous,
     validation_failures: failures,
-    repair_instruction: 'Return the complete corrected JSON object only. Preserve the original user intent. Do not omit required sections. Avoid legacy placeholder terminology. Add missing implementation details, fallback behavior, acceptance criteria, and UI/backend bindings until every validation gate passes.'
+    repair_instruction: 'Return the complete corrected JSON object only. Preserve the original user intent and product domain. Do not describe BNDR | SPEX, saved SPEX, compiled_spex.md, DeepSeek/Supabase/Stripe internals, entitlement gates, or generator-workbench routes unless the customer explicitly requested that product. Do not omit required sections. Avoid legacy placeholder terminology. Add missing implementation details, fallback behavior, acceptance criteria, and UI/backend bindings until every validation gate passes.'
   });
 }
 async function fetchDeepSeekContent({ mode, inputContent }) {
@@ -503,14 +554,16 @@ async function fetchDeepSeekContent({ mode, inputContent }) {
     stream: false
   };
   if (thinkingType !== 'disabled' && process.env.DEEPSEEK_REASONING_EFFORT) body.reasoning_effort = process.env.DEEPSEEK_REASONING_EFFORT;
-  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), service: 'generation', timeoutMs: DEEPSEEK_TIMEOUT_MS });
+  const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), service: 'generation', timeoutMs: Math.min(DEEPSEEK_TIMEOUT_MS, GENERATION_PROVIDER_BUDGET_MS) });
   return { model, requestId: response.id || null, content: response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content };
 }
 async function callDeepSeek({ mode, input }) {
   let inputContent = JSON.stringify(input);
   let lastResult = null;
   let lastFailures = [];
+  const startedAt = Date.now();
   for (let attempt = 0; attempt <= SPEX_REPAIR_ATTEMPTS; attempt += 1) {
+    if (Date.now() - startedAt > GENERATION_PROVIDER_BUDGET_MS) throw appError('generation request timed out before validation completed', 504, 'generation_timeout', servicePublicMessage('generation', 504));
     lastResult = await fetchDeepSeekContent({ mode, inputContent });
     let parsed;
     try {
@@ -520,7 +573,7 @@ async function callDeepSeek({ mode, input }) {
       inputContent = repairUserContent(input, String(lastResult.content || '').slice(0, 5000), lastFailures);
       continue;
     }
-    lastFailures = outputGateFailures(parsed, mode);
+    lastFailures = generationGateFailures(parsed, mode, input);
     if (!lastFailures.length) return { output: parsed, model: lastResult.model, requestId: lastResult.requestId };
     inputContent = repairUserContent(input, parsed, lastFailures);
   }

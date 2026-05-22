@@ -26,6 +26,7 @@ const stripeCalls = [];
 let stripeCheckoutFailures = 0;
 let failNextProfilePatch = false;
 let deepseekTimeouts = 0;
+let deepseekDriftedOutputs = 0;
 
 const systemSpecKeys = [
   'system_overview', 'user_intent_translation', 'architecture_spec', 'module_definitions', 'api_layer', 'data_flow', 'state_management', 'integration_points', 'deterministic_derivation_logic', 'ui_ux_spec', 'component_backend_bindings', 'payment_access_logic', 'security_privacy_logic', 'failure_modes', 'fallback_recovery_logic', 'observability_support_logic', 'deployment_strategy', 'validation_logic', 'test_plan', 'acceptance_criteria', 'final_schema', 'final_instruction'
@@ -62,35 +63,55 @@ function specRowsFor(url) {
   if (id) return specs.filter((spec) => `eq.${spec.id}` === id);
   return [...specs].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
-function makeSpecOutput() {
+function goalFromDeepSeekInput(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || '{}'));
+    return parsed.goal_description || parsed.original_input && parsed.original_input.goal_description || 'client project intake dashboard';
+  } catch (_) {
+    return 'client project intake dashboard';
+  }
+}
+function makeSpecOutput(goal = 'client project intake dashboard') {
   const output = Object.fromEntries(systemSpecKeys.map((key) => [key, { covered: true }]));
-  output.module_definitions = [{ name: 'generation workspace', responsibility: 'collect product description and display generated SPEX' }];
+  output.system_overview = { goal, purpose: `Build the requested product workflow for ${goal}.` };
+  output.user_intent_translation = { confirmed_input: goal, derived_requirements: ['product dashboard', 'client project intake', 'role-based account access'] };
+  output.architecture_spec = { client: 'responsive product UI for dashboard and intake work', server: 'authenticated product API', data: 'project intake, client, user, and audit tables' };
+  output.module_definitions = [{ name: 'client project intake dashboard', responsibility: 'collect client project intake details and display dashboard status' }];
   output.component_backend_bindings = [{
-    ui_component: 'generate form',
-    backend_action: '/api/generate/system',
-    request_contract: { goal_description: 'string' },
-    response_contract: { spec: 'object', entitlement: 'object' },
-    auth_or_entitlement: 'authenticated user with active subscription or generation credit',
-    state_mutation: 'output panel renders response and saved list refreshes',
-    persistence_target: 'specs table',
-    errors_and_fallbacks: ['validation toast for short input', 'billing modal for payment_required', 'copy/download if save fallback returns unsaved output']
+    ui_component: 'client project intake form',
+    backend_action: '/api/projects/intake',
+    request_contract: { client_name: 'string', project_scope: 'string', intake_notes: 'string' },
+    response_contract: { project: 'object', dashboard_status: 'object' },
+    auth_or_entitlement: 'authenticated product user with dashboard permission',
+    state_mutation: 'dashboard appends the new client project and updates intake status',
+    persistence_target: 'projects, clients, intake_events, and audit_events tables',
+    errors_and_fallbacks: ['validation message for incomplete intake', 'retry save after network failure', 'preserve draft project notes']
   }];
-  output.failure_modes = [{ condition: 'provider timeout', user_cause: false, expected_system_behavior: 'show retry-safe timeout message and preserve user input' }];
-  output.fallback_recovery_logic = [{ trigger: 'save failure after generation', fallback: 'return unsaved output', recovery: 'copy or download output and retry save later' }];
+  output.failure_modes = [{ condition: 'client project intake save timeout', user_cause: false, expected_system_behavior: 'preserve intake draft and show retry action' }];
+  output.fallback_recovery_logic = [{ trigger: 'project intake save failure', fallback: 'keep draft locally in memory for the current session', recovery: 'retry save or export project intake summary' }];
   output.observability_support_logic = { logs: ['request id', 'user id', 'safe route'], redaction: ['email', 'tokens', 'provider keys'], developer_notification: 'system errors only' };
-  output.test_plan = ['Generate SPEX with valid description and verify all required sections are populated'];
-  output.acceptance_criteria = ['component_backend_bindings includes UI, backend, payload, response, auth, state, persistence, and fallback details'];
-  output.final_instruction = 'Build from this SPEX without omitting validation, fallback, or persistence requirements.';
+  output.test_plan = ['Submit a client project intake and verify it appears on the dashboard with preserved audit data.'];
+  output.acceptance_criteria = ['Client project intake dashboard includes UI, backend, payload, response, auth, state, persistence, and fallback details.'];
+  output.final_schema = { product: 'client project intake dashboard', input: { project_scope: 'string' }, output: { dashboard_status: 'object' } };
+  output.final_instruction = 'Build the client project intake dashboard without omitting validation, fallback, or persistence requirements.';
   return output;
 }
-function makeSchemaOutput() {
+function makeDriftedSpecOutput() {
+  const output = makeSpecOutput();
+  output.system_overview = { goal: 'BNDR | SPEX saved SPEX generation workspace', purpose: 'Turn one product description into a build-ready implementation contract with bounded generation recovery.' };
+  output.user_intent_translation = { confirmed_input: 'BNDR | SPEX compiler', derived_requirements: ['saved SPEX library', 'billing entitlement gate'] };
+  output.architecture_spec = { client: 'static HTML/CSS/JS app shell', server: 'Node HTTP API with authenticated routes', data: 'Supabase profiles and specs tables', provider: 'DeepSeek JSON generation with bounded recovery output' };
+  output.component_backend_bindings = [{ ui_component: 'Generate SPEX form', backend_action: '/api/generate/system', request_contract: { goal_description: 'string' }, response_contract: { spec: 'object' }, auth_or_entitlement: 'billing entitlement gate', state_mutation: 'saved SPEX list refreshes', persistence_target: 'specs table', errors_and_fallbacks: ['provider generation timeout'] }];
+  return output;
+}
+function makeSchemaOutput(goal = 'client project intake schema') {
   return {
-    structured_schema: { instruction: 'directive', input_contract: { required_fields: [] }, output_contract: { response_fields: {} }, implementation_notes: [], final_instruction: 'instruction' },
-    component_backend_bindings: [{ ui_component: 'generate form', backend_action: '/api/generate/schema', request_contract: { goal_description: 'string' }, response_contract: { spec: 'object' }, auth_or_entitlement: 'authenticated and entitled', state_mutation: 'saved spec appended', persistence_target: 'specs table', errors_and_fallbacks: ['show validation error or unsaved output'] }],
-    validation_flags: ['Key presence confirmed', 'Logic consistent', 'Model-ready'],
-    failure_modes: [{ condition: 'invalid input', user_cause: true, expected_system_behavior: 'return validation error' }],
-    fallback_recovery_logic: [{ trigger: 'save failure', fallback: 'return unsaved output', recovery: 'copy or download output' }],
-    acceptance_criteria: ['Schema rejects missing required fields'],
+    structured_schema: { instruction: `Reusable intake schema for ${goal}`, input_contract: { required_fields: ['client_name', 'project_request', 'intake_priority'] }, output_contract: { response_fields: { client_project: 'object', intake_status: 'string' } }, implementation_notes: ['Validate client project request before persistence'], final_instruction: 'Implement client project request intake schema.' },
+    component_backend_bindings: [{ ui_component: 'client project request form', backend_action: '/api/projects/intake-schema', request_contract: { client_name: 'string', project_request: 'string' }, response_contract: { client_project: 'object' }, auth_or_entitlement: 'authenticated product user', state_mutation: 'client project request is validated and queued', persistence_target: 'client_projects table', errors_and_fallbacks: ['show validation error or preserve intake draft'] }],
+    validation_flags: ['Client project intake key presence confirmed', 'Intake schema logic consistent', 'Model-ready'],
+    failure_modes: [{ condition: 'invalid client project intake input', user_cause: true, expected_system_behavior: 'return validation error' }],
+    fallback_recovery_logic: [{ trigger: 'client project request save failure', fallback: 'preserve intake draft', recovery: 'retry save or export request' }],
+    acceptance_criteria: ['Client project intake schema rejects missing required fields'],
     meta_tag: 'bndr_spex_merged_schema_v1'
   };
 }
@@ -198,7 +219,8 @@ function mockFetch(url, options = {}) {
     }
     const body = readBody(options);
     const systemPrompt = String(body.messages && body.messages[0] && body.messages[0].content || '');
-    const output = systemPrompt.includes('structured_schema, component_backend_bindings, validation_flags, failure_modes, fallback_recovery_logic, acceptance_criteria, meta_tag') ? makeSchemaOutput() : makeSpecOutput();
+    const goal = goalFromDeepSeekInput(body.messages && body.messages[1] && body.messages[1].content);
+    const output = systemPrompt.includes('structured_schema, component_backend_bindings, validation_flags, failure_modes, fallback_recovery_logic, acceptance_criteria, meta_tag') ? makeSchemaOutput(goal) : (deepseekDriftedOutputs-- > 0 ? makeDriftedSpecOutput() : makeSpecOutput(goal));
     return Promise.resolve(json({ id: 'deepseek-request-1', choices: [{ message: { content: JSON.stringify(output) } }] }));
   }
 
@@ -330,6 +352,15 @@ function authed(options = {}) {
     assert.ok(schemaGenerate.body.spec.output.component_backend_bindings.length, 'schema output includes UI/backend component bindings');
     assert.ok(schemaGenerate.body.spec.output.fallback_recovery_logic.length, 'schema output includes fallback recovery logic');
     assert.strictEqual(profile.single_spec_credits, 0, 'schema generation consumes credit atomically on save');
+
+    profile = { ...profile, subscription_id: null, subscription_status: 'none', subscription_current_period_end: null, single_spec_credits: 1 };
+    deepseekDriftedOutputs = 1;
+    const repairedDrift = await request(base, '/api/generate/system', authed({ method: 'POST', body: JSON.stringify({ goal_description: 'Build an app that helps me build a legal case through an agent with forensic turn-by-turn logging, court API accuracy, deterministic state machine, full memory logging, hashed evidence history, any-file upload analysis, and court-ready letter writing.' }) }));
+    assert.strictEqual(repairedDrift.response.status, 200, 'drifted BNDR/SPEX output repairs and succeeds');
+    const repairedText = JSON.stringify(repairedDrift.body.spec.output).toLowerCase();
+    assert.ok(repairedText.includes('legal') || repairedText.includes('court') || repairedText.includes('forensic'), 'repaired SPEX preserves requested domain');
+    assert.ok(!repairedText.includes('/api/generate/system'), 'repaired SPEX does not describe internal generator route');
+    assert.ok(!repairedText.includes('saved spex library'), 'repaired SPEX does not describe BNDR/SPEX saved library');
 
     profile = { ...profile, subscription_id: null, subscription_status: 'none', subscription_current_period_end: null, single_spec_credits: 1 };
     deepseekTimeouts = 1;

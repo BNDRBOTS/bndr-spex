@@ -1,7 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
 const env = window.HD_ENV || {};
-const GENERATION_TIMEOUT_MS = Number(env.GENERATION_CLIENT_TIMEOUT_MS || 300000);
+const GENERATION_TIMEOUT_MS = Number(env.GENERATION_CLIENT_TIMEOUT_MS || 180000);
 const supabase = createClient(env.SUPABASE_URL || 'https://missing.supabase.co', env.SUPABASE_ANON_KEY || 'missing');
 
 let session = null;
