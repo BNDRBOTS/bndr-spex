@@ -307,7 +307,7 @@ textarea:focus {
 .spex2-shell .spex-workspace { position: relative; flex: 1; margin-left: var(--rail-width); padding: 34px 3vw; height: calc(100vh - 70px); overflow: hidden; }
 .spex2-shell .lane-panel { display: none; height: 100%; min-width: 0; }
 .spex2-shell .lane-panel.active { display: flex; flex-direction: column; }
-.spex2-shell .compiler-lane.active { display: grid; grid-template-columns: 1fr 1.1fr; gap: 34px; align-items: stretch; }
+.spex2-shell .compiler-lane.active { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 34px; align-items: stretch; }
 .spex2-shell .library-lane.active, .spex2-shell .access-lane.active { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 34px; align-items: stretch; }
 .spex2-shell .col-input, .spex2-shell .col-right { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow-y: auto; padding-right: 8px; }
 .spex2-shell .col-input::-webkit-scrollbar, .spex2-shell .col-right::-webkit-scrollbar, .spex2-shell .library-lane::-webkit-scrollbar, .spex2-shell .access-lane::-webkit-scrollbar { width: 6px; }
@@ -338,8 +338,9 @@ textarea:focus {
 .spex2-shell .button-secondary:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.28); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,.28); }
 .spex2-shell .button-danger { background: rgba(255,59,48,.1); border: 1px solid var(--error); color: #ff8f87; }
 .spex2-shell .button-danger:hover { background: var(--error); color: #fff; transform: translateY(-2px); }
-.spex2-shell .col-right { gap: 16px; padding-top: 0; }
-.spex2-shell .library-lane .col-right, .spex2-shell .access-lane .col-right { padding-top: 88px; }
+.spex2-shell .col-right { gap: 0; padding-top: 0; }
+.spex2-shell .library-lane .col-right { padding-top: 0; }
+.spex2-shell .access-lane .col-right { padding-top: 88px; }
 .spex2-shell .panel-section { padding: 24px; flex-shrink: 0; }
 .spex2-shell .output-section { display: flex; flex-direction: column; flex: 0 0 clamp(540px, 62vh, 760px); min-height: 540px; }
 .spex2-shell .output-header { justify-content: space-between; gap: 16px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--inner-border); }
