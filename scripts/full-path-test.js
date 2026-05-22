@@ -24,6 +24,7 @@ let subscriptionStatus = 'active';
 const billingEvents = new Set();
 const stripeCalls = [];
 let stripeCheckoutFailures = 0;
+let stripeCheckoutBadRequestFailures = 0;
 let failNextProfilePatch = false;
 let deepseekTimeouts = 0;
 let deepseekDriftedOutputs = 0;
@@ -187,6 +188,10 @@ function mockFetch(url, options = {}) {
 
   if (href === 'https://api.stripe.com/v1/checkout/sessions') {
     stripeCalls.push({ path: '/checkout/sessions', auth: authHeader(options), idempotency: idempotencyHeader(options), body: stripeBody(options) });
+    if (stripeCheckoutBadRequestFailures > 0) {
+      stripeCheckoutBadRequestFailures -= 1;
+      return Promise.resolve(json({ error: { message: 'You must configure terms of service consent in the Dashboard.' } }, 400));
+    }
     if (stripeCheckoutFailures > 0) {
       stripeCheckoutFailures -= 1;
       return Promise.resolve(json({ error: { message: 'Stripe API/provider sk_live_new_key raw failure' } }, 500));
@@ -361,6 +366,15 @@ function authed(options = {}) {
     assert.ok(repairedText.includes('legal') || repairedText.includes('court') || repairedText.includes('forensic'), 'repaired SPEX preserves requested domain');
     assert.ok(!repairedText.includes('/api/generate/system'), 'repaired SPEX does not describe internal generator route');
     assert.ok(!repairedText.includes('saved spex library'), 'repaired SPEX does not describe BNDR/SPEX saved library');
+
+    stripeCheckoutBadRequestFailures = 1;
+    const checkoutFallback = await request(base, '/api/billing/checkout', authed({ method: 'POST', body: JSON.stringify({ plan: 'single' }) }));
+    assert.strictEqual(checkoutFallback.response.status, 200, 'checkout retries without optional Stripe parameters after 400');
+    const fallbackCalls = stripeCalls.filter((call) => call.path === '/checkout/sessions').slice(-2);
+    assert.strictEqual(fallbackCalls.length, 2, 'checkout fallback uses two Stripe attempts');
+    assert.ok(fallbackCalls[0].body.has('tax_id_collection[enabled]'), 'first checkout attempt includes enhanced billing parameters');
+    assert.ok(!fallbackCalls[1].body.has('tax_id_collection[enabled]'), 'fallback checkout attempt removes optional billing parameters');
+    assert.strictEqual(fallbackCalls[1].body.get('line_items[0][price]'), 'price_single', 'fallback checkout preserves requested one-shot price');
 
     profile = { ...profile, subscription_id: null, subscription_status: 'none', subscription_current_period_end: null, single_spec_credits: 1 };
     deepseekTimeouts = 1;

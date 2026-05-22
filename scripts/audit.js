@@ -107,6 +107,7 @@ const serverChecks = [
   ['Stripe webhook route', /\/api\/stripe\/webhook/],
   ['Stripe signature verification', /timingSafeEqual/],
   ['Stripe Checkout route', /\/api\/billing\/checkout/],
+  ['Stripe checkout optional parameter fallback', /buildCheckoutParams[\s\S]*options\.minimal[\s\S]*Checkout optional parameters fallback[\s\S]*request\(true\)/],
   ['Stripe Billing Portal route', /\/api\/billing\/portal/],
   ['Supabase user verification', /\/auth\/v1\/user/],
   ['Supabase service role REST', /SUPABASE_SERVICE_ROLE_KEY/],

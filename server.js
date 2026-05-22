@@ -603,13 +603,13 @@ async function stripeRequest(pathname, options = {}) {
   if (method !== 'GET' && !headers['Idempotency-Key']) headers['Idempotency-Key'] = stripeIdempotencyKey();
   return fetchJson(`${STRIPE_API}${pathname}`, { ...options, headers, service: 'billing', timeoutMs: options.timeoutMs || STRIPE_TIMEOUT_MS, retries: options.retries === undefined ? BILLING_RETRY_ATTEMPTS : options.retries });
 }
-async function createCheckoutSession(user, profile, plan) {
+function buildCheckoutParams(user, profile, plan, options = {}) {
   const isMonthly = plan === 'monthly';
   const priceId = isMonthly ? stripeMonthlyPriceId() : stripeSinglePriceId();
   if (!priceId) throw configError('STRIPE_PRICE_ID');
   const baseUrl = appBaseUrl();
   if (!baseUrl) throw configError('APP_BASE_URL');
-  const params = { mode: isMonthly ? 'subscription' : 'payment', success_url: `${baseUrl}/app.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/app.html?checkout=cancelled`, client_reference_id: user.id, 'metadata[user_id]': user.id, 'metadata[plan]': plan, 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1', allow_promotion_codes: 'true', billing_address_collection: 'required', 'phone_number_collection[enabled]': 'false', 'tax_id_collection[enabled]': 'true', 'consent_collection[terms_of_service]': 'required', 'custom_text[terms_of_service_acceptance][message]': `I agree to BNDR | SPEX Terms of Service: ${baseUrl}/terms.html` };
+  const params = { mode: isMonthly ? 'subscription' : 'payment', success_url: `${baseUrl}/app.html?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${baseUrl}/app.html?checkout=cancelled`, client_reference_id: user.id, 'metadata[user_id]': user.id, 'metadata[plan]': plan, 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1' };
   if (isMonthly) {
     params['subscription_data[metadata][user_id]'] = user.id;
     params['subscription_data[metadata][plan]'] = plan;
@@ -617,10 +617,30 @@ async function createCheckoutSession(user, profile, plan) {
     params['payment_intent_data[metadata][user_id]'] = user.id;
     params['payment_intent_data[metadata][plan]'] = plan;
   }
-  if (process.env.STRIPE_AUTOMATIC_TAX === 'true') params['automatic_tax[enabled]'] = 'true';
+  if (!options.minimal) {
+    params.allow_promotion_codes = 'true';
+    params.billing_address_collection = 'required';
+    params['phone_number_collection[enabled]'] = 'false';
+    params['tax_id_collection[enabled]'] = 'true';
+    if (process.env.STRIPE_REQUIRE_TERMS_CONSENT === 'true') {
+      params['consent_collection[terms_of_service]'] = 'required';
+      params['custom_text[terms_of_service_acceptance][message]'] = `I agree to [BNDR | SPEX Terms of Service](${baseUrl}/terms.html)`;
+    }
+  }
+  if (!options.minimal && process.env.STRIPE_AUTOMATIC_TAX === 'true') params['automatic_tax[enabled]'] = 'true';
   if (!isMonthly) params.customer_creation = 'always';
   if (profile.stripe_customer_id) { params.customer = profile.stripe_customer_id; params['customer_update[address]'] = 'auto'; params['customer_update[name]'] = 'auto'; } else if (user.email) { params.customer_email = user.email; }
-  return stripeRequest('/checkout/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formEncode(params) });
+  return params;
+}
+async function createCheckoutSession(user, profile, plan) {
+  const request = (minimal = false) => stripeRequest('/checkout/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formEncode(buildCheckoutParams(user, profile, plan, { minimal })) });
+  try {
+    return await request(false);
+  } catch (error) {
+    if (Number(error.status || 0) !== 400) throw error;
+    logServerError('Checkout optional parameters fallback', error);
+    return request(true);
+  }
 }
 async function createPortalSession(profile) {
   if (!profile || !profile.stripe_customer_id) return null;
