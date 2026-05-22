@@ -333,14 +333,11 @@ function authed(options = {}) {
 
     profile = { ...profile, subscription_id: null, subscription_status: 'none', subscription_current_period_end: null, single_spec_credits: 1 };
     deepseekTimeouts = 1;
-    const timeoutRecovery = await request(base, '/api/generate/system', authed({ method: 'POST', body: JSON.stringify({ goal_description: 'Build a field service scheduler with dispatch views and billing recovery.' }) }));
-    assert.strictEqual(timeoutRecovery.response.status, 200, 'provider timeout returns recovery output');
-    assert.strictEqual(timeoutRecovery.body.saved, false, 'provider timeout recovery is unsaved');
-    assert.strictEqual(timeoutRecovery.body.recovery, true, 'provider timeout is marked as recovery');
-    assert.strictEqual(timeoutRecovery.body.spec.id, null, 'provider timeout recovery does not pretend to be saved');
-    assert.strictEqual(profile.single_spec_credits, 1, 'provider timeout recovery does not consume credit');
-    assert.ok(timeoutRecovery.body.spec.output.component_backend_bindings.length, 'provider timeout recovery includes UI/backend bindings');
-    assert.ok(timeoutRecovery.body.spec.output.fallback_recovery_logic.length, 'provider timeout recovery includes fallback logic');
+    const providerTimeout = await request(base, '/api/generate/system', authed({ method: 'POST', body: JSON.stringify({ goal_description: 'Build a field service scheduler with dispatch views and billing recovery.' }) }));
+    assert.strictEqual(providerTimeout.response.status, 504, 'provider timeout returns timeout error');
+    assert.ok(/Generation is taking too long/i.test(providerTimeout.body.error), 'provider timeout message is safe and clear');
+    assert.strictEqual(profile.single_spec_credits, 1, 'provider timeout does not consume credit');
+    assert.ok(!providerTimeout.body.spec, 'provider timeout does not return fake SPEX output');
 
     profile = { ...profile, subscription_id: null, subscription_status: 'canceled', subscription_current_period_end: new Date(Date.now() - 86400).toISOString(), single_spec_credits: 0 };
     me = await request(base, '/api/me', authed({ method: 'GET' }));
@@ -362,7 +359,7 @@ function authed(options = {}) {
     assert.ok(/@media \(max-width: 720px\)/.test(css.text), 'mobile breakpoint present');
     assert.ok(css.text.includes('.modal-actions'), 'billing modal mobile styles present');
 
-    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema timeout-recovery notify save reopen webhook-labels sanitized-errors mobile');
+    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema timeout-error notify save reopen webhook-labels sanitized-errors mobile');
   } finally {
     await close();
     global.fetch = nativeFetch;

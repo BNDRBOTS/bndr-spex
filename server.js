@@ -506,101 +506,12 @@ async function fetchDeepSeekContent({ mode, inputContent }) {
   const response = await fetchJson('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), service: 'generation', timeoutMs: DEEPSEEK_TIMEOUT_MS });
   return { model, requestId: response.id || null, content: response.choices && response.choices[0] && response.choices[0].message && response.choices[0].message.content };
 }
-function recoveryGoal(input) {
-  return safeString(input && input.goal_description || input && input.context && input.context.goal_description || 'Product workflow', 220) || 'Product workflow';
-}
-function buildRecoveryBinding(goal) {
-  return {
-    ui_component: 'Primary product workflow surface',
-    backend_action: 'Derived requirement: implement authenticated workflow endpoint for the described product goal',
-    request_contract: { goal_description: goal, required_payload_validation: ['authenticated user', 'authorized entitlement', 'validated product inputs'] },
-    response_contract: { success: 'structured workflow result', errors: 'safe user-facing error with retry or support path' },
-    auth_or_entitlement: 'authenticated account with active subscription, trial, or available SPEX credit',
-    state_mutation: 'client loading state resolves to generated output, saved record, or copy/download recovery output',
-    persistence_target: 'specs table or equivalent durable project/spec storage',
-    errors_and_fallbacks: ['preserve user input on timeout', 'show safe retry message', 'avoid charging a credit for provider timeout recovery', 'allow copy/download of recovery output']
-  };
-}
-function recoveryFallbacks() {
-  return [
-    { trigger: 'provider/model timeout', fallback: 'return a complete recovery SPEX without consuming a one-time credit', recovery: 'allow user retry with same prompt and preserve copy/download path' },
-    { trigger: 'provider invalid JSON', fallback: 'repair output against required keys and validation gates', recovery: 'retry bounded repair once before returning a safe recovery SPEX' },
-    { trigger: 'database save failure', fallback: 'return generated output unsaved', recovery: 'let user copy/download and retry saved workspace refresh' },
-    { trigger: 'network failure', fallback: 'show safe retryable error and preserve form state', recovery: 'retry after connectivity returns' }
-  ];
-}
-function buildRecoveryOutput(mode, input, reason) {
-  const goal = recoveryGoal(input);
-  const binding = buildRecoveryBinding(goal);
-  const fallbacks = recoveryFallbacks();
-  if (mode === 'schema') {
-    return {
-      structured_schema: {
-        instruction: 'Implement the described product workflow as a validated, authenticated, recoverable system contract.',
-        input_contract: { required_fields: ['goal_description'], optional_fields: ['platform', 'roles', 'integrations', 'billing_rules'], assumptions: ['Unstated implementation details are derived requirements that must be validated before build.'] },
-        output_contract: { response_fields: { spec: 'object', saved: 'boolean', timing_ms: 'number' }, types: { goal_description: 'string' }, constraints: { min_goal_description_length: 8, provider_timeout_recovery: true } },
-        implementation_notes: ['Map every visible UI surface to backend action, auth state, persistence target, loading state, empty state, and recovery state.', 'Add observability with redacted logs and support notification only for system-caused failures.', 'Validate provider output against required schema keys before exposing it to users.'],
-        final_instruction: 'Build the workflow from this schema, then validate each route, UI state, entitlement path, persistence path, and failure recovery path.'
-      },
-      component_backend_bindings: [binding],
-      validation_flags: ['Required keys present', 'UI/backend binding present', 'Failure and fallback behavior present', 'Recovery output produced because provider did not return within the bounded production window'],
-      failure_modes: [{ condition: reason, user_cause: false, expected_system_behavior: 'return safe recovery output, preserve user input, and allow retry without presenting secrets or raw provider errors' }],
-      fallback_recovery_logic: fallbacks,
-      acceptance_criteria: ['User can submit one product description.', 'System validates auth and entitlement before generation.', 'Generated or recovery output can be copied or downloaded.', 'Timeouts do not expose provider internals.', 'Developer notification is available only for system-caused failures.'],
-      meta_tag: 'bndr_spex_merged_schema_v1'
-    };
-  }
-  return {
-    system_overview: { goal, purpose: 'Turn one product description into a build-ready implementation contract with bounded generation recovery.' },
-    user_intent_translation: { confirmed_input: goal, derived_requirements: ['authenticated workspace', 'validated product workflow', 'copy/download output path', 'saved SPEX library', 'billing entitlement gate'] },
-    architecture_spec: { client: 'static HTML/CSS/JS app shell', server: 'Node HTTP API with authenticated routes', data: 'Supabase profiles and specs tables', provider: 'DeepSeek JSON generation with bounded recovery output' },
-    module_definitions: [{ name: 'Generation workspace', responsibility: 'collect goal_description, submit generation request, render output, preserve retry/copy/download path' }, { name: 'Access control', responsibility: 'verify Supabase user and active entitlement before paid generation' }, { name: 'Saved SPEX library', responsibility: 'list, open, rename, and delete generated specs' }],
-    api_layer: { routes: ['/api/generate/system', '/api/specs', '/api/me', '/api/billing/checkout', '/api/billing/portal', '/api/support/notify'], contract: 'JSON request/response with sanitized public errors' },
-    data_flow: { submit: 'goal_description -> auth check -> entitlement check -> provider generation or recovery -> save or unsaved output', read: 'saved specs list -> selected spec detail -> output display' },
-    state_management: { loading: 'progress panel and disabled generate controls', success: 'output rendered and saved list refreshed', failure: 'safe message with retry/copy/download preservation when possible' },
-    integration_points: { auth: 'Supabase session and user verification', billing: 'Stripe checkout, portal, webhook recovery', generation: 'DeepSeek JSON mode with bounded timeout', support: 'redacted developer notification' },
-    deterministic_derivation_logic: { rule: 'All unspecified technical decisions become derived requirements or validation requirements, never invented facts.', provider_recovery_reason: reason },
-    ui_ux_spec: { primary_surfaces: ['compiler input', 'SPEX output', 'stored SPEX lane', 'access lane', 'settings/support modal'], requirement: 'Each surface must map to a backend route, loading state, empty state, success state, error state, and recovery action.' },
-    component_backend_bindings: [binding],
-    payment_access_logic: { requirement: 'Generation requires active trial/subscription or a one-time credit.', recovery: 'Provider timeout recovery output does not consume a credit because no provider-backed SPEX completed.' },
-    security_privacy_logic: { auth: 'Bearer session required for account, generation, billing, saved specs, and developer notification routes', redaction: ['email in logs', 'provider keys', 'Stripe keys', 'webhook secrets', 'bearer tokens'] },
-    failure_modes: [{ condition: reason, user_cause: false, visible_symptom: 'generation exceeds provider response window', expected_system_behavior: 'return complete recovery SPEX, preserve user input, avoid credit consumption, and allow retry' }],
-    fallback_recovery_logic: fallbacks,
-    observability_support_logic: { log: ['status', 'safe error code', 'redacted message', 'route context'], notify_developer_when: ['provider timeout', 'provider unavailable', 'save failure', 'unexpected server error'], never_log: ['tokens', 'API keys', 'raw secrets', 'payment credentials'] },
-    deployment_strategy: { runtime: 'Node server on Railway or equivalent', required_env: ['APP_BASE_URL', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'DEEPSEEK_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'], checks: ['health endpoint clean', 'generation route bounded', 'billing webhook configured'] },
-    validation_logic: { gates: ['exact required top-level keys', 'non-empty UI/backend binding matrix', 'failure modes present', 'fallback recovery present', 'acceptance criteria present', 'legacy placeholder terminology absent'] },
-    test_plan: ['Submit valid product description and verify output renders.', 'Force provider timeout and verify recovery output returns before browser timeout.', 'Verify credit is not consumed for provider timeout recovery.', 'Verify saved specs still load after successful generation.', 'Verify public errors are sanitized.'],
-    acceptance_criteria: ['Generation request returns either provider-backed SPEX or recovery SPEX before the browser timeout.', 'Output has every required section populated.', 'Copy and download work for generated and recovery outputs.', 'User input is preserved after timeout recovery.', 'No secrets or raw provider errors are shown.'],
-    final_schema: { input: { goal_description: 'string' }, output: { spec: 'complete SPEX object', saved: 'boolean', recovery: 'boolean' }, fallback_rules: fallbacks, validation_requirements: ['component_backend_bindings', 'failure_modes', 'fallback_recovery_logic', 'acceptance_criteria'] },
-    final_instruction: 'Implement the described workflow with validated UI/backend bindings, entitlement checks, saved output handling, and bounded provider-timeout recovery.'
-  };
-}
-function isProviderRecoveryError(error) {
-  const status = Number(error && error.status || 0);
-  const code = String(error && error.code || '');
-  return status === 429 || status === 502 || status === 503 || status === 504 || code.includes('generation_timeout') || code.includes('generation_unavailable');
-}
-function recoveryResult(mode, input, error) {
-  const reason = cleanRecoveryReason(error);
-  return { output: buildRecoveryOutput(mode, input, reason), model: 'provider-timeout-recovery', requestId: null, recovery: true, recoveryReason: reason };
-}
-function cleanRecoveryReason(error) {
-  if (!error) return 'provider did not return within the bounded production window';
-  if (Number(error.status || 0) === 429) return 'provider rate limit or capacity delay';
-  if (Number(error.status || 0) === 504) return 'provider did not return within the bounded production window';
-  return 'provider generation was temporarily unavailable';
-}
 async function callDeepSeek({ mode, input }) {
   let inputContent = JSON.stringify(input);
   let lastResult = null;
   let lastFailures = [];
   for (let attempt = 0; attempt <= SPEX_REPAIR_ATTEMPTS; attempt += 1) {
-    try {
-      lastResult = await fetchDeepSeekContent({ mode, inputContent });
-    } catch (error) {
-      if (isProviderRecoveryError(error)) return recoveryResult(mode, input, error);
-      throw error;
-    }
+    lastResult = await fetchDeepSeekContent({ mode, inputContent });
     let parsed;
     try {
       parsed = parseModelJson(lastResult.content);
@@ -616,7 +527,6 @@ async function callDeepSeek({ mode, input }) {
   const validationLabel = mode === 'schema' ? 'Structured schema failed validation' : 'System spec failed validation';
   const error = appError(`${validationLabel}: ${lastFailures.join('; ')}`, 502, 'spex_validation_failed', 'Generation did not pass validation. Please try again.');
   error.validation_failures = lastFailures;
-  if (isProviderRecoveryError(error)) return recoveryResult(mode, input, error);
   throw error;
 }
 async function saveSpec(userId, type, title, input, result, entitlementSource) {
@@ -843,10 +753,6 @@ async function generateHandler(req, res, type) {
   const title = titleFromInput(type, body);
   requireGoal(input);
   const result = await callDeepSeek({ mode: type, input });
-  if (result.recovery) {
-    const profile = await getProfile(user).catch(() => entitlement.profile);
-    return send(res, 200, { saved: false, recovery: true, recovery_reason: result.recoveryReason, spec: { id: null, type, title, input, output: result.output, model: result.model, request_id: result.requestId, unsaved: true }, timing_ms: Date.now() - startedAt, entitlement: { source: entitlement.source, profile, access: accessState(profile) } });
-  }
   let saved;
   try {
     saved = await saveSpec(user.id, type, title, input, result, entitlement.source);
