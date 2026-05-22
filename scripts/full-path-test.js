@@ -25,6 +25,7 @@ const billingEvents = new Set();
 const stripeCalls = [];
 let stripeCheckoutFailures = 0;
 let failNextProfilePatch = false;
+let deepseekTimeouts = 0;
 
 const systemSpecKeys = [
   'system_overview', 'user_intent_translation', 'architecture_spec', 'module_definitions', 'api_layer', 'data_flow', 'state_management', 'integration_points', 'deterministic_derivation_logic', 'ui_ux_spec', 'component_backend_bindings', 'payment_access_logic', 'security_privacy_logic', 'failure_modes', 'fallback_recovery_logic', 'observability_support_logic', 'deployment_strategy', 'validation_logic', 'test_plan', 'acceptance_criteria', 'final_schema', 'final_instruction'
@@ -189,6 +190,12 @@ function mockFetch(url, options = {}) {
 
   if (href === 'https://api.deepseek.com/chat/completions') {
     assert.strictEqual(authHeader(options), 'Bearer deepseek-secret', 'generation uses DeepSeek server key');
+    if (deepseekTimeouts > 0) {
+      deepseekTimeouts -= 1;
+      const error = new Error('provider hung');
+      error.name = 'AbortError';
+      return Promise.reject(error);
+    }
     const body = readBody(options);
     const systemPrompt = String(body.messages && body.messages[0] && body.messages[0].content || '');
     const output = systemPrompt.includes('structured_schema, component_backend_bindings, validation_flags, failure_modes, fallback_recovery_logic, acceptance_criteria, meta_tag') ? makeSchemaOutput() : makeSpecOutput();
@@ -324,6 +331,17 @@ function authed(options = {}) {
     assert.ok(schemaGenerate.body.spec.output.fallback_recovery_logic.length, 'schema output includes fallback recovery logic');
     assert.strictEqual(profile.single_spec_credits, 0, 'schema generation consumes credit atomically on save');
 
+    profile = { ...profile, subscription_id: null, subscription_status: 'none', subscription_current_period_end: null, single_spec_credits: 1 };
+    deepseekTimeouts = 1;
+    const timeoutRecovery = await request(base, '/api/generate/system', authed({ method: 'POST', body: JSON.stringify({ goal_description: 'Build a field service scheduler with dispatch views and billing recovery.' }) }));
+    assert.strictEqual(timeoutRecovery.response.status, 200, 'provider timeout returns recovery output');
+    assert.strictEqual(timeoutRecovery.body.saved, false, 'provider timeout recovery is unsaved');
+    assert.strictEqual(timeoutRecovery.body.recovery, true, 'provider timeout is marked as recovery');
+    assert.strictEqual(timeoutRecovery.body.spec.id, null, 'provider timeout recovery does not pretend to be saved');
+    assert.strictEqual(profile.single_spec_credits, 1, 'provider timeout recovery does not consume credit');
+    assert.ok(timeoutRecovery.body.spec.output.component_backend_bindings.length, 'provider timeout recovery includes UI/backend bindings');
+    assert.ok(timeoutRecovery.body.spec.output.fallback_recovery_logic.length, 'provider timeout recovery includes fallback logic');
+
     profile = { ...profile, subscription_id: null, subscription_status: 'canceled', subscription_current_period_end: new Date(Date.now() - 86400).toISOString(), single_spec_credits: 0 };
     me = await request(base, '/api/me', authed({ method: 'GET' }));
     assert.strictEqual(me.body.access.state, 'expired', 'expired access label returned');
@@ -344,7 +362,7 @@ function authed(options = {}) {
     assert.ok(/@media \(max-width: 720px\)/.test(css.text), 'mobile breakpoint present');
     assert.ok(css.text.includes('.modal-actions'), 'billing modal mobile styles present');
 
-    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema notify save reopen webhook-labels sanitized-errors mobile');
+    console.log('FULL_PATH_PASS buy subscribe billing-recovery checkout-confirm self-heal-retry generate schema timeout-recovery notify save reopen webhook-labels sanitized-errors mobile');
   } finally {
     await close();
     global.fetch = nativeFetch;
